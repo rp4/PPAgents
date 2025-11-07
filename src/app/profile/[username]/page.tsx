@@ -1,53 +1,22 @@
 "use client"
 
-import { use, useEffect, useState } from "react"
+import { use } from "react"
 import { useRouter } from "next/navigation"
+import { useSession, signOut } from "next-auth/react"
 import Image from "next/image"
 import Link from "next/link"
-import { createClient } from "@/lib/supabase/client"
 import { useQuery } from "@tanstack/react-query"
 import { getUserProfile, getUserAgents, getUserFavorites } from "@/lib/supabase/queries"
 import { Button } from "@/components/ui/button"
 import { AgentCard } from "@/components/agents/AgentCard"
 import { LogOut, Upload as UploadIcon, Heart, Edit } from "lucide-react"
+import { useState } from "react"
 
 export default function ProfilePage({ params }: { params: Promise<{ username: string }> }) {
   const { username } = use(params)
   const router = useRouter()
-  const supabase = createClient()
-
-  const [currentUser, setCurrentUser] = useState<any>(null)
+  const { data: session, status } = useSession()
   const [activeTab, setActiveTab] = useState<"created" | "favorites">("created")
-  const [isLoading, setIsLoading] = useState(true)
-
-  // Fetch current user
-  useEffect(() => {
-    const fetchUser = async () => {
-      try {
-        const { data: { user }, error } = await supabase.auth.getUser()
-
-        // Handle expired/invalid session gracefully
-        if (error) {
-          console.warn('Auth error in profile page:', error.message)
-          setCurrentUser(null)
-        } else {
-          setCurrentUser(user)
-        }
-      } catch (error) {
-        console.error('Failed to fetch user:', error)
-        setCurrentUser(null)
-      } finally {
-        setIsLoading(false)
-      }
-    }
-    fetchUser()
-
-    const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
-      setCurrentUser(session?.user ?? null)
-    })
-
-    return () => subscription.unsubscribe()
-  }, [supabase])
 
   // Fetch profile data
   const { data: profile, isLoading: loadingProfile } = useQuery({
@@ -64,7 +33,7 @@ export default function ProfilePage({ params }: { params: Promise<{ username: st
   })
 
   // Fetch user's favorites (only for own profile)
-  const isOwnProfile = currentUser?.id === profile?.id
+  const isOwnProfile = session?.user?.id === profile?.id
   const { data: favoritedAgents = [], isLoading: loadingFavorites } = useQuery({
     queryKey: ['user-favorites', profile?.id],
     queryFn: () => getUserFavorites(profile!.id),
@@ -72,17 +41,16 @@ export default function ProfilePage({ params }: { params: Promise<{ username: st
   })
 
   const handleSignOut = async () => {
-    await supabase.auth.signOut()
-    router.push("/")
+    await signOut({ callbackUrl: '/' })
   }
 
   // Loading state
-  if (isLoading || loadingProfile) {
+  if (status === 'loading' || loadingProfile) {
     return (
       <div className="container mx-auto px-4 py-12">
         <div className="flex items-center justify-center min-h-[60vh]">
           <div className="text-center">
-            <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-purple-600 mx-auto"></div>
+            <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600 mx-auto"></div>
             <p className="mt-4 text-gray-600">Loading profile...</p>
           </div>
         </div>
@@ -123,10 +91,10 @@ export default function ProfilePage({ params }: { params: Promise<{ username: st
                 alt={profile.full_name || profile.username || 'User'}
                 width={120}
                 height={120}
-                className="rounded-full border-4 border-purple-200 object-cover"
+                className="rounded-full border-4 border-blue-200 object-cover"
               />
             ) : (
-              <div className="w-30 h-30 rounded-full bg-gradient-to-br from-purple-500 to-blue-500 flex items-center justify-center text-white text-4xl font-bold border-4 border-purple-200">
+              <div className="w-30 h-30 rounded-full bg-gradient-to-br from-blue-500 to-blue-500 flex items-center justify-center text-white text-4xl font-bold border-4 border-blue-200">
                 {(profile.username || profile.full_name || 'U').charAt(0).toUpperCase()}
               </div>
             )}
@@ -178,7 +146,7 @@ export default function ProfilePage({ params }: { params: Promise<{ username: st
                     href={profile.website}
                     target="_blank"
                     rel="noopener noreferrer"
-                    className="text-sm text-purple-600 hover:text-purple-700 hover:underline"
+                    className="text-sm text-blue-600 hover:text-blue-700 hover:underline"
                   >
                     Website
                   </a>
@@ -188,7 +156,7 @@ export default function ProfilePage({ params }: { params: Promise<{ username: st
                     href={profile.github_url}
                     target="_blank"
                     rel="noopener noreferrer"
-                    className="text-sm text-purple-600 hover:text-purple-700 hover:underline"
+                    className="text-sm text-blue-600 hover:text-blue-700 hover:underline"
                   >
                     GitHub
                   </a>
@@ -198,7 +166,7 @@ export default function ProfilePage({ params }: { params: Promise<{ username: st
                     href={profile.linkedin_url}
                     target="_blank"
                     rel="noopener noreferrer"
-                    className="text-sm text-purple-600 hover:text-purple-700 hover:underline"
+                    className="text-sm text-blue-600 hover:text-blue-700 hover:underline"
                   >
                     LinkedIn
                   </a>
@@ -218,7 +186,7 @@ export default function ProfilePage({ params }: { params: Promise<{ username: st
               onClick={() => setActiveTab("created")}
               className={`flex-1 px-6 py-4 font-semibold transition-colors ${
                 activeTab === "created"
-                  ? "text-purple-600 border-b-2 border-purple-600"
+                  ? "text-blue-600 border-b-2 border-blue-600"
                   : "text-gray-600 hover:text-gray-900"
               }`}
             >
@@ -231,7 +199,7 @@ export default function ProfilePage({ params }: { params: Promise<{ username: st
               onClick={() => setActiveTab("favorites")}
               className={`flex-1 px-6 py-4 font-semibold transition-colors ${
                 activeTab === "favorites"
-                  ? "text-purple-600 border-b-2 border-purple-600"
+                  ? "text-blue-600 border-b-2 border-blue-600"
                   : "text-gray-600 hover:text-gray-900"
               }`}
             >

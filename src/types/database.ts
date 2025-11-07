@@ -136,6 +136,8 @@ export interface Database {
           complexity_level: 'beginner' | 'intermediate' | 'advanced' | null
           estimated_tokens: number | null
           estimated_cost: number | null
+          phase: string | null
+          benefit: string | null
           tags: string[] | null
           favorites_count: number
           downloads_count: number
@@ -172,6 +174,8 @@ export interface Database {
           complexity_level?: 'beginner' | 'intermediate' | 'advanced' | null
           estimated_tokens?: number | null
           estimated_cost?: number | null
+          phase?: string | null
+          benefit?: string | null
           tags?: string[] | null
           favorites_count?: number
           downloads_count?: number
@@ -208,6 +212,8 @@ export interface Database {
           complexity_level?: 'beginner' | 'intermediate' | 'advanced' | null
           estimated_tokens?: number | null
           estimated_cost?: number | null
+          phase?: string | null
+          benefit?: string | null
           tags?: string[] | null
           favorites_count?: number
           downloads_count?: number

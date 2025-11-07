@@ -60,8 +60,25 @@ export const createAgentSchema = z.object({
     .uuid('Invalid category')
     .optional(),
 
+  status_id: z.string()
+    .transform(val => val === '' ? undefined : val)
+    .optional(),
+
+  phase_id: z.string()
+    .transform(val => val === '' ? undefined : val)
+    .optional(),
+
+  benefit_id: z.string()
+    .transform(val => val === '' ? undefined : val)
+    .optional(),
+
+  ops_status_id: z.string()
+    .transform(val => val === '' ? undefined : val)
+    .optional(),
+
   platforms: z.array(z.string().uuid())
-    .min(1, 'Select at least one platform'),
+    .optional()
+    .default([]),
 
   tags: z.array(z.string())
     .max(10, 'Maximum 10 tags')
@@ -102,6 +119,32 @@ export const createAgentSchema = z.object({
     .max(10, 'Maximum 10 sample outputs')
     .default([])
     .transform(outputs => outputs.map(o => sanitizeHtml(o))),
+
+  phase: z.string()
+    .max(100, 'Phase must be less than 100 characters')
+    .optional()
+    .transform(val => val ? DOMPurify.sanitize(val, { ALLOWED_TAGS: [] }) : undefined),
+
+  benefit: z.string()
+    .max(500, 'Benefit must be less than 500 characters')
+    .optional()
+    .transform(val => val ? sanitizeHtml(val) : undefined),
+
+  data: z.string()
+    .max(10000, 'Data must be less than 10000 characters')
+    .optional()
+    .transform(val => val ? sanitizeHtml(val) : undefined),
+
+  benefits_desc: z.string()
+    .max(5000, 'Benefits description must be less than 5000 characters')
+    .optional()
+    .transform(val => val ? sanitizeHtml(val) : undefined),
+
+  link: z.string()
+    .url('Must be a valid URL')
+    .max(500, 'Link must be less than 500 characters')
+    .optional()
+    .or(z.literal('')),
 })
 
 export const updateAgentSchema = createAgentSchema.partial()

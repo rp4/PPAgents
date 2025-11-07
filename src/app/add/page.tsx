@@ -2,46 +2,33 @@
 
 import { useState, useEffect } from "react"
 import { useRouter } from "next/navigation"
+import { useSession, signIn } from "next-auth/react"
 import { useForm } from "react-hook-form"
 import { zodResolver } from "@hookform/resolvers/zod"
 import { toast } from "sonner"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Input } from "@/components/ui/input"
-import { Upload, Linkedin, ArrowLeft, Check, AlertCircle } from "lucide-react"
-import { createClient } from "@/lib/supabase/client"
-import { useCreateAgent } from "@/hooks/useAgents"
-import { useQuery } from "@tanstack/react-query"
-import { getPlatforms } from "@/lib/supabase/queries"
+import { Upload, ArrowLeft, Check, AlertCircle } from "lucide-react"
+import { useCreateAgent, useStatuses, usePhases, useBenefits, useOpsStatuses } from "@/hooks/useAgentsAPI"
 import { createAgentSchema, type CreateAgentInput } from "@/lib/validations/agent"
 import Link from "next/link"
-import dynamic from "next/dynamic"
-import { JSONContent } from "@tiptap/core"
-
-// Lazy load DocumentEditor (client-side only)
-const DocumentEditor = dynamic(
-  () => import('@/components/documents/DocumentEditor').then(mod => ({ default: mod.DocumentEditor })),
-  { ssr: false }
-)
 
 export default function AddAgentPage() {
-  const [user, setUser] = useState<any>(null)
-  const [isLoading, setIsLoading] = useState(true)
+  const { data: session, status } = useSession()
   const [submitError, setSubmitError] = useState<string | null>(null)
   const [submitSuccess, setSubmitSuccess] = useState(false)
-  const [documentationContent, setDocumentationContent] = useState<JSONContent | null>(null)
-  const [documentationImages, setDocumentationImages] = useState<string[]>([])
   const router = useRouter()
-  const supabase = createClient()
 
-  // Fetch platforms from database
-  const { data: platforms = [], isLoading: loadingPlatforms } = useQuery({
-    queryKey: ['platforms'],
-    queryFn: async () => {
-      const result = await getPlatforms()
-      return result
-    },
-  })
+  // Fetch statuses, phases, benefits, and ops statuses from API
+  const { data: statusesResponse } = useStatuses()
+  const { data: phasesResponse } = usePhases()
+  const { data: benefitsResponse } = useBenefits()
+  const { data: opsStatusesResponse } = useOpsStatuses()
+  const statuses = statusesResponse?.statuses || []
+  const phases = phasesResponse?.phases || []
+  const benefits = benefitsResponse?.benefits || []
+  const opsStatuses = opsStatusesResponse?.opsStatuses || []
 
   // React Hook Form with Zod validation
   const {
@@ -53,76 +40,44 @@ export default function AddAgentPage() {
   } = useForm<CreateAgentInput>({
     resolver: zodResolver(createAgentSchema),
     defaultValues: {
-      platforms: [],
-      tags: [],
       is_public: true,
+      status_id: '',
+      phase_id: '',
+      benefit_id: '',
+      ops_status_id: '',
     },
   })
-
-  const selectedPlatforms = watch('platforms') || []
 
   // Create agent mutation
   const { mutate: createAgent, isPending } = useCreateAgent()
 
+  // Redirect if not authenticated
   useEffect(() => {
-    const checkUser = async () => {
-      try {
-        const { data: { user } } = await supabase.auth.getUser()
-        setUser(user)
-        setIsLoading(false)
-      } catch (error) {
-        console.error('Error checking user:', error)
-        setIsLoading(false)
-      }
+    if (status === 'unauthenticated') {
+      router.push('/auth/signin')
     }
-
-    checkUser()
-
-    const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
-      setUser(session?.user ?? null)
-    })
-
-    return () => subscription.unsubscribe()
-  }, [supabase])
+  }, [status, router])
 
   const handleSignIn = async () => {
-    const { error } = await supabase.auth.signInWithOAuth({
-      provider: 'linkedin_oidc',
-      options: {
-        redirectTo: `${window.location.origin}/auth/callback?next=/add`,
-      },
-    })
-
-    if (error) {
-      console.error('Error logging in with LinkedIn:', error.message)
-      setSubmitError('Failed to sign in with LinkedIn. Please try again.')
-      toast.error('Failed to sign in with LinkedIn')
-    }
-  }
-
-  const togglePlatform = (platformId: string) => {
-    const current = selectedPlatforms
-    if (current.includes(platformId)) {
-      setValue('platforms', current.filter(id => id !== platformId))
-    } else {
-      setValue('platforms', [...current, platformId])
-    }
-    setSubmitError(null)
+    await signIn('google', { callbackUrl: '/add' })
   }
 
   const onSubmit = async (data: CreateAgentInput) => {
+    console.log('=== Form submitted ===')
+    console.log('Form data:', data)
+    console.log('Form errors:', errors)
+    console.log('Session:', session)
+
     setSubmitError(null)
     setSubmitSuccess(false)
 
-    if (!user) {
+    if (!session?.user) {
+      console.error('No session user')
       setSubmitError('You must be logged in to create an agent')
       return
     }
 
     try {
-      // Extract platforms from form data
-      const platformIds = data.platforms || []
-
       // Generate slug from name
       const slug = data.name
         .toLowerCase()
@@ -130,96 +85,113 @@ export default function AddAgentPage() {
         .replace(/^-|-$/g, '')
         .substring(0, 100)
 
-      // Prepare agent data - only include fields that have values
+      // Prepare agent data for API (using camelCase as API expects)
       const agentData: any = {
         name: data.name,
-        slug: slug,
         description: data.description,
-        user_id: user.id,
-        is_public: true,
-        // For now, both preview and full show the same content (free agents)
-        // When monetization is enabled, user can set preview vs full manually
-        documentation_preview: documentationContent,
-        documentation_full: documentationContent,
-        documentation_preview_images: documentationImages,
-        documentation_full_images: documentationImages,
-      }
-
-      // Only add tags if provided
-      if (data.tags && data.tags.length > 0) {
-        agentData.tags = data.tags
+        tagIds: [], // Empty array since we removed tags
       }
 
       // Only add category if provided
       if (data.category_id) {
-        agentData.category_id = data.category_id
+        agentData.categoryId = data.category_id
       }
 
+      // Only add status if provided
+      if (data.status_id) {
+        agentData.statusId = data.status_id
+      }
+
+      // Only add phase if provided
+      if (data.phase_id) {
+        agentData.phaseId = data.phase_id
+      }
+
+      // Only add benefit if provided
+      if (data.benefit_id) {
+        agentData.benefitId = data.benefit_id
+      }
+
+      // Only add ops status if provided
+      if (data.ops_status_id) {
+        agentData.opsStatusId = data.ops_status_id
+      }
+
+      // Add free-form text fields if provided
+      if (data.data) {
+        agentData.data = data.data
+      }
+
+      if (data.benefits_desc) {
+        agentData.benefitsDesc = data.benefits_desc
+      }
+
+      if (data.link) {
+        agentData.link = data.link
+      }
+
+      console.log('Generated slug:', slug)
+      console.log('Agent data to send:', agentData)
+
+      console.log('Calling createAgent mutation...')
       createAgent(
-        { agent: agentData, platformIds },
+        agentData,
         {
           onSuccess: (newAgent) => {
+            console.log('=== Agent created successfully ===')
+            console.log('Agent object:', JSON.stringify(newAgent, null, 2))
+            console.log('Agent ID:', newAgent.id)
+            console.log('Agent slug:', newAgent.slug)
+            console.log('Agent name:', newAgent.name)
+            console.log('Agent isPublic:', newAgent.isPublic)
+            console.log('Redirect URL will be:', `/agents/${newAgent.slug}`)
+
             setSubmitSuccess(true)
             toast.success('Agent created successfully!')
 
             // Redirect to the agent detail page after a short delay
+            const redirectUrl = `/agents/${newAgent.slug}`
+            console.log('Scheduling redirect to:', redirectUrl)
             setTimeout(() => {
-              router.push(`/agents/${newAgent.slug}`)
+              console.log('Executing redirect to:', redirectUrl)
+              router.push(redirectUrl)
             }, 1500)
           },
           onError: (error: any) => {
-            console.error('Error creating agent:', error)
+            console.error('=== Error creating agent ===')
+            console.error('Error:', error)
+            console.error('Error message:', error.message)
+            console.error('Error stack:', error.stack)
             setSubmitError(error.message || 'Failed to create agent. Please try again.')
             toast.error('Failed to create agent')
           }
         }
       )
+      console.log('createAgent called')
     } catch (error: any) {
       console.error('Error in onSubmit:', error)
       setSubmitError(error.message || 'An unexpected error occurred')
     }
   }
 
-  // Show login prompt if not authenticated
-  if (isLoading) {
+  // Show loading while checking auth
+  if (status === 'loading') {
     return (
       <div className="container max-w-4xl mx-auto px-4 py-8">
         <div className="flex items-center justify-center min-h-[400px]">
-          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-purple-600"></div>
+          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600"></div>
         </div>
       </div>
     )
   }
 
-  if (!user) {
+  // This will be handled by the useEffect redirect, but keep for safety
+  if (!session) {
     return (
       <div className="container max-w-4xl mx-auto px-4 py-8">
-        <Card className="border-2">
-          <CardHeader>
-            <CardTitle className="flex items-center gap-2">
-              <Linkedin className="h-5 w-5 text-blue-600" />
-              Sign In Required
-            </CardTitle>
-            <CardDescription>
-              You must be signed in to create an agent
-            </CardDescription>
-          </CardHeader>
-          <CardContent className="space-y-4">
-            <p className="text-muted-foreground">
-              Please sign in with your LinkedIn account to share your AI agents with the community.
-            </p>
-            <Button onClick={handleSignIn} className="w-full" size="lg">
-              <Linkedin className="mr-2 h-5 w-5" />
-              Sign In with LinkedIn
-            </Button>
-            <div className="text-center">
-              <Link href="/browse" className="text-sm text-muted-foreground hover:text-primary">
-                <ArrowLeft className="inline h-4 w-4 mr-1" />
-                Back to Browse
-              </Link>
-            </div>
-          </CardContent>
-        </Card>
+        <div className="flex items-center justify-center min-h-[400px]">
+          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600"></div>
+        </div>
       </div>
     )
   }
@@ -304,62 +276,156 @@ export default function AddAgentPage() {
               )}
             </div>
 
-            {/* Platforms */}
+            {/* Status */}
             <div className="space-y-2">
-              <label className="text-sm font-medium">
-                Platforms <span className="text-red-500">*</span>
+              <label htmlFor="status_id" className="text-sm font-medium">
+                Status
               </label>
-              <p className="text-xs text-muted-foreground">
-                Select all platforms where this agent can be used
-              </p>
-              {loadingPlatforms ? (
-                <div className="text-sm text-muted-foreground">Loading platforms...</div>
-              ) : (
-                <div className="grid grid-cols-2 md:grid-cols-3 gap-2">
-                  {platforms.map((platform) => (
-                    <button
-                      key={platform.id}
-                      type="button"
-                      onClick={() => togglePlatform(platform.id)}
-                      className={`p-3 border rounded-lg text-sm transition-colors ${
-                        selectedPlatforms.includes(platform.id)
-                          ? 'bg-purple-50 border-purple-500 text-purple-700'
-                          : 'border-gray-300 hover:border-purple-300'
-                      }`}
-                    >
-                      {platform.name}
-                    </button>
-                  ))}
-                </div>
+              <select
+                id="status_id"
+                {...register('status_id')}
+                className="w-full px-3 py-2 border rounded-md"
+              >
+                <option value="">Select a status</option>
+                {statuses.map((status: any) => (
+                  <option key={status.id} value={status.id}>
+                    {status.name}
+                  </option>
+                ))}
+              </select>
+              {errors.status_id && (
+                <p className="text-sm text-red-500">{errors.status_id.message}</p>
               )}
-              {errors.platforms && (
-                <p className="text-sm text-red-500">{errors.platforms.message}</p>
+            </div>
+
+            {/* Phase */}
+            <div className="space-y-2">
+              <label htmlFor="phase_id" className="text-sm font-medium">
+                Phase
+              </label>
+              <select
+                id="phase_id"
+                {...register('phase_id')}
+                className="w-full px-3 py-2 border rounded-md"
+              >
+                <option value="">Select a phase</option>
+                {phases.map((phase: any) => (
+                  <option key={phase.id} value={phase.id}>
+                    {phase.name}
+                  </option>
+                ))}
+              </select>
+              {errors.phase_id && (
+                <p className="text-sm text-red-500">{errors.phase_id.message}</p>
+              )}
+            </div>
+
+            {/* Benefit */}
+            <div className="space-y-2">
+              <label htmlFor="benefit_id" className="text-sm font-medium">
+                Benefit Level
+              </label>
+              <select
+                id="benefit_id"
+                {...register('benefit_id')}
+                className="w-full px-3 py-2 border rounded-md"
+              >
+                <option value="">Select benefit level</option>
+                {benefits.map((benefit: any) => (
+                  <option key={benefit.id} value={benefit.id}>
+                    {benefit.name}
+                  </option>
+                ))}
+              </select>
+              {errors.benefit_id && (
+                <p className="text-sm text-red-500">{errors.benefit_id.message}</p>
+              )}
+            </div>
+
+            {/* Ops Status */}
+            <div className="space-y-2">
+              <label htmlFor="ops_status_id" className="text-sm font-medium">
+                Operational Status
+              </label>
+              <select
+                id="ops_status_id"
+                {...register('ops_status_id')}
+                className="w-full px-3 py-2 border rounded-md"
+              >
+                <option value="">Select operational status</option>
+                {opsStatuses.map((opsStatus: any) => (
+                  <option key={opsStatus.id} value={opsStatus.id}>
+                    {opsStatus.name}
+                  </option>
+                ))}
+              </select>
+              {errors.ops_status_id && (
+                <p className="text-sm text-red-500">{errors.ops_status_id.message}</p>
               )}
             </div>
 
           </CardContent>
         </Card>
 
-        {/* Documentation */}
+        {/* Additional Information */}
         <Card>
           <CardHeader>
-            <CardTitle>Documentation</CardTitle>
+            <CardTitle>Additional Information</CardTitle>
             <CardDescription>
-              Write comprehensive documentation for your agent
+              Provide additional details about your agent
             </CardDescription>
           </CardHeader>
-          <CardContent>
-            <DocumentEditor
-              agentSlug={watch('name')?.toLowerCase().replace(/[^a-z0-9]+/g, '-') || 'new-agent'}
-              initialContent={documentationContent || undefined}
-              onContentChange={(content) => setDocumentationContent(content)}
-              onSave={(content, images) => {
-                setDocumentationContent(content)
-                setDocumentationImages(images)
-              }}
-              autoSave={false}
-              placeholder="Write your agent's documentation here. Include setup instructions, usage examples, and any important notes..."
-            />
+          <CardContent className="space-y-6">
+            {/* Data */}
+            <div className="space-y-2">
+              <label htmlFor="data" className="text-sm font-medium">
+                Data
+              </label>
+              <textarea
+                id="data"
+                {...register('data')}
+                placeholder="Additional data or notes..."
+                rows={4}
+                className="w-full px-3 py-2 border rounded-md resize-none"
+              />
+              {errors.data && (
+                <p className="text-sm text-red-500">{errors.data.message}</p>
+              )}
+            </div>
+
+            {/* Benefits Description */}
+            <div className="space-y-2">
+              <label htmlFor="benefits_desc" className="text-sm font-medium">
+                Benefits Description
+              </label>
+              <textarea
+                id="benefits_desc"
+                {...register('benefits_desc')}
+                placeholder="Describe the benefits of using this agent..."
+                rows={4}
+                className="w-full px-3 py-2 border rounded-md resize-none"
+              />
+              {errors.benefits_desc && (
+                <p className="text-sm text-red-500">{errors.benefits_desc.message}</p>
+              )}
+            </div>
+
+            {/* Link */}
+            <div className="space-y-2">
+              <label htmlFor="link" className="text-sm font-medium">
+                External Link
+              </label>
+              <Input
+                id="link"
+                {...register('link')}
+                placeholder="https://example.com/agent-docs"
+                type="url"
+              />
+              {errors.link && (
+                <p className="text-sm text-red-500">{errors.link.message}</p>
+              )}
+            </div>
+
           </CardContent>
         </Card>
 
@@ -370,6 +436,14 @@ export default function AddAgentPage() {
             disabled={isSubmitting || isPending || submitSuccess}
             className="flex-1"
             size="lg"
+            onClick={(e) => {
+              console.log('=== Button clicked ===')
+              console.log('Button type:', e.currentTarget.type)
+              console.log('Form errors before submit:', errors)
+              console.log('Is submitting:', isSubmitting)
+              console.log('Is pending:', isPending)
+              console.log('Submit success:', submitSuccess)
+            }}
           >
             {isSubmitting || isPending ? (
               <>

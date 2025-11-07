@@ -5,7 +5,7 @@ import { Button } from '@/components/ui/button'
 import { useToggleFavorite } from '@/hooks/useFavorites'
 import { useState } from 'react'
 import { toast } from 'sonner'
-import { createClient } from '@/lib/supabase/client'
+import { signIn } from 'next-auth/react'
 
 interface FavoriteButtonProps {
   agentId: string
@@ -29,22 +29,12 @@ export function FavoriteButton({
   const [localFavorited, setLocalFavorited] = useState(initialFavorited)
   const [localCount, setLocalCount] = useState(favoritesCount)
   const { mutate: toggleFavorite, isPending } = useToggleFavorite()
-  const supabase = createClient()
 
   const handleClick = async () => {
     // Check if user is authenticated
     if (!userId) {
-      // Trigger LinkedIn OAuth sign-in
-      const { error } = await supabase.auth.signInWithOAuth({
-        provider: 'linkedin_oidc',
-        options: {
-          redirectTo: `${window.location.origin}/auth/callback`,
-        },
-      })
-
-      if (error) {
-        toast.error('Failed to sign in. Please try again.')
-      }
+      // Trigger Google OAuth sign-in
+      await signIn('google', { callbackUrl: window.location.pathname })
       return
     }
 

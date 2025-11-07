@@ -4,9 +4,9 @@
   --color-red-500: oklch(0.637 0.237 25.331);
   --color-blue-500: oklch(0.601 0.213 241.814);
   --color-green-500: oklch(0.723 0.191 142.495);
-  --color-purple-600: oklch(0.631 0.244 293.756);
-  --color-purple-500: oklch(0.707 0.255 292.715);
-  --color-purple-700: oklch(0.545 0.216 292.082);
+  --color-blue-600: oklch(0.631 0.244 293.756);
+  --color-blue-500: oklch(0.707 0.255 292.715);
+  --color-blue-700: oklch(0.545 0.216 292.082);
   --color-gray-50: oklch(0.985 0.002 247.858);
   --color-gray-100: oklch(0.967 0.003 264.542);
   --color-gray-200: oklch(0.928 0.006 264.531);
@@ -31,7 +31,7 @@
     --card-foreground: 240 10% 3.9%;
     --popover: 0 0% 100%;
     --popover-foreground: 240 10% 3.9%;
-    --primary: 262 83% 58%;
+    --primary: 217 91% 60%;
     --primary-foreground: 0 0% 100%;
     --secondary: 240 5% 96%;
     --secondary-foreground: 240 6% 10%;
@@ -43,7 +43,7 @@
     --destructive-foreground: 0 0% 98%;
     --border: 240 6% 90%;
     --input: 240 6% 90%;
-    --ring: 262 83% 58%;
+    --ring: 217 91% 60%;
     --radius: 0.75rem;
   }
 

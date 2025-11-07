@@ -1,117 +1,89 @@
 'use client'
 
-import { useState, useEffect, useMemo } from 'react'
+import { useState, useMemo } from 'react'
 import { useDebounce } from 'use-debounce'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Badge } from '@/components/ui/badge'
-import { Filter, Search, Star } from 'lucide-react'
-import { useAgents } from '@/hooks/useAgents'
-import { getPlatforms } from '@/lib/supabase/queries'
+import { Filter, Search, Star, ChevronDown, ChevronRight } from 'lucide-react'
+import { useAgents, useStatuses, usePhases, useBenefits, useOpsStatuses } from '@/hooks/useAgentsAPI'
 import { AgentCard } from '@/components/agents/AgentCard'
-import type { Platform } from '@/types/database'
 
 export default function BrowsePage() {
   const [searchQuery, setSearchQuery] = useState('')
-  const [debouncedSearchQuery] = useDebounce(searchQuery, 300) // 300ms debounce
-  const [selectedPlatformIds, setSelectedPlatformIds] = useState<string[]>([])
-  const [minRating, setMinRating] = useState<number | null>(null)
-  const [sortBy, setSortBy] = useState<'popular' | 'rating' | 'recent' | 'favorites'>('popular')
+  const [debouncedSearchQuery] = useDebounce(searchQuery, 300)
+  const [selectedStatuses, setSelectedStatuses] = useState<string[]>([])
+  const [selectedPhases, setSelectedPhases] = useState<string[]>([])
+  const [selectedBenefits, setSelectedBenefits] = useState<string[]>([])
+  const [selectedOpsStatuses, setSelectedOpsStatuses] = useState<string[]>([])
+  const [sortBy, setSortBy] = useState<'createdAt' | 'avgRating' | 'downloadsCount' | 'favoritesCount'>('createdAt')
   const [showFilters, setShowFilters] = useState(false)
 
-  // Fetch platforms
-  const [platforms, setPlatforms] = useState<Platform[]>([])
-  const [platformsLoading, setPlatformsLoading] = useState(true)
+  // Collapsible state for each filter section
+  const [statusExpanded, setStatusExpanded] = useState(true)
+  const [phaseExpanded, setPhaseExpanded] = useState(true)
+  const [benefitExpanded, setBenefitExpanded] = useState(true)
+  const [opsStatusExpanded, setOpsStatusExpanded] = useState(true)
 
-  useEffect(() => {
-    console.log('[Browse] Fetching platforms...')
-    setPlatformsLoading(true)
-    getPlatforms()
-      .then((data) => {
-        console.log('[Browse] Platforms loaded:', data.length)
-        setPlatforms(data)
-      })
-      .catch((err) => {
-        console.error('[Browse] Error loading platforms:', err)
-      })
-      .finally(() => {
-        setPlatformsLoading(false)
-      })
-  }, [])
+  // Fetch all filter options
+  const { data: statusesResponse } = useStatuses()
+  const { data: phasesResponse } = usePhases()
+  const { data: benefitsResponse } = useBenefits()
+  const { data: opsStatusesResponse } = useOpsStatuses()
 
-  // Build query params for agents (using debounced search, excluding platformIds)
+  const statuses = statusesResponse?.statuses || []
+  const phases = phasesResponse?.phases || []
+  const benefits = benefitsResponse?.benefits || []
+  const opsStatuses = opsStatusesResponse?.opsStatuses || []
+
+  // Build query params for agents
   const queryParams = useMemo(
     () => ({
       search: debouncedSearchQuery || undefined,
-      minRating: minRating || undefined,
+      statuses: selectedStatuses.length > 0 ? selectedStatuses.join(',') : undefined,
+      phases: selectedPhases.length > 0 ? selectedPhases.join(',') : undefined,
+      benefits: selectedBenefits.length > 0 ? selectedBenefits.join(',') : undefined,
+      opsStatuses: selectedOpsStatuses.length > 0 ? selectedOpsStatuses.join(',') : undefined,
       sortBy,
-      limit: 1000, // Fetch more to allow client-side filtering
+      order: 'desc' as const,
+      limit: 50,
     }),
-    [debouncedSearchQuery, minRating, sortBy]
+    [debouncedSearchQuery, selectedStatuses, selectedPhases, selectedBenefits, selectedOpsStatuses, sortBy]
   )
 
-  // Fetch agents with real-time filtering
-  const { data: allAgents = [], isLoading, error } = useAgents(queryParams)
-
-  // Filter agents by selected platforms on the client side
-  const agents = useMemo(() => {
-    if (selectedPlatformIds.length === 0) {
-      return allAgents.slice(0, 20) // Return first 20 if no platform filter
-    }
-
-    // Filter agents that have at least one of the selected platforms
-    const filtered = allAgents.filter((agent) => {
-      return agent.agent_platforms?.some((ap) =>
-        selectedPlatformIds.includes(ap.platform_id || ap.platform?.id)
-      )
-    })
-
-    return filtered.slice(0, 20) // Return first 20 filtered results
-  }, [allAgents, selectedPlatformIds])
-
-  // Fetch agents for counting (without platform filter to get accurate counts)
-  const countQueryParams = useMemo(
-    () => ({
-      search: searchQuery || undefined,
-      minRating: minRating || undefined,
-      limit: 1000, // Get more agents for accurate counting
-    }),
-    [searchQuery, minRating]
-  )
-  const { data: agentsForCounting = [] } = useAgents(countQueryParams)
-
-  // Calculate platform counts based on current filters (excluding platform filter itself)
-  const platformCounts = useMemo(() => {
-    const counts: Record<string, number> = {}
-
-    agentsForCounting.forEach((agent) => {
-      agent.agent_platforms?.forEach((ap) => {
-        const platformId = ap.platform?.id || ap.platform_id
-        if (platformId) {
-          counts[platformId] = (counts[platformId] || 0) + 1
-        }
-      })
-    })
-
-    return counts
-  }, [agentsForCounting])
-
-  // Handle platform toggle
-  const togglePlatform = (platformId: string) => {
-    setSelectedPlatformIds((prev) =>
-      prev.includes(platformId)
-        ? prev.filter((id) => id !== platformId)
-        : [...prev, platformId]
-    )
-  }
+  // Fetch agents
+  const { data: agentsResponse, isLoading, error } = useAgents(queryParams)
+  const agents = agentsResponse?.agents || []
 
   // Calculate active filter count
   const activeFilterCount = useMemo(() => {
-    let count = 0
-    if (selectedPlatformIds.length > 0) count += selectedPlatformIds.length
-    if (minRating !== null) count += 1
-    return count
-  }, [selectedPlatformIds.length, minRating])
+    return selectedStatuses.length + selectedPhases.length + selectedBenefits.length + selectedOpsStatuses.length
+  }, [selectedStatuses, selectedPhases, selectedBenefits, selectedOpsStatuses])
+
+  // Toggle filter handlers
+  const toggleStatus = (slug: string) => {
+    setSelectedStatuses(prev =>
+      prev.includes(slug) ? prev.filter(s => s !== slug) : [...prev, slug]
+    )
+  }
+
+  const togglePhase = (slug: string) => {
+    setSelectedPhases(prev =>
+      prev.includes(slug) ? prev.filter(s => s !== slug) : [...prev, slug]
+    )
+  }
+
+  const toggleBenefit = (slug: string) => {
+    setSelectedBenefits(prev =>
+      prev.includes(slug) ? prev.filter(s => s !== slug) : [...prev, slug]
+    )
+  }
+
+  const toggleOpsStatus = (slug: string) => {
+    setSelectedOpsStatuses(prev =>
+      prev.includes(slug) ? prev.filter(s => s !== slug) : [...prev, slug]
+    )
+  }
 
   return (
     <div className="container mx-auto px-4 py-8">
@@ -146,10 +118,10 @@ export default function BrowsePage() {
             value={sortBy}
             onChange={(e) => setSortBy(e.target.value as any)}
           >
-            <option value="popular">Most Popular</option>
-            <option value="rating">Highest Rated</option>
-            <option value="recent">Most Recent</option>
-            <option value="favorites">Most Favorited</option>
+            <option value="createdAt">Most Recent</option>
+            <option value="avgRating">Highest Rated</option>
+            <option value="downloadsCount">Most Downloaded</option>
+            <option value="favoritesCount">Most Favorited</option>
           </select>
         </div>
       </div>
@@ -157,80 +129,149 @@ export default function BrowsePage() {
       <div className="flex gap-8">
         {/* Filters Sidebar */}
         <aside className={`w-64 flex-shrink-0 ${showFilters ? 'block' : 'hidden'} lg:block`}>
-          <div className="space-y-6">
-            {/* Platform Filter */}
-            <div>
-              <h3 className="font-semibold mb-3">Platform</h3>
-              {platformsLoading ? (
-                <div className="text-sm text-muted-foreground">Please Refresh the Page.</div>
-              ) : platforms.length === 0 ? (
-                <div className="text-sm text-muted-foreground">No platforms found</div>
-              ) : (
-                <div className="space-y-2">
-                  {platforms.map((platform) => (
-                    <label key={platform.id} className="flex items-center cursor-pointer">
+          <div className="space-y-4">
+            {/* Status Filter */}
+            <div className="border rounded-lg">
+              <button
+                onClick={() => setStatusExpanded(!statusExpanded)}
+                className="w-full flex items-center justify-between p-3 hover:bg-muted/50 transition-colors"
+              >
+                <div className="flex items-center gap-2">
+                  <span className="font-semibold">Status</span>
+                  {selectedStatuses.length > 0 && (
+                    <Badge variant="secondary" className="text-xs">
+                      {selectedStatuses.length}
+                    </Badge>
+                  )}
+                </div>
+                {statusExpanded ? <ChevronDown className="h-4 w-4" /> : <ChevronRight className="h-4 w-4" />}
+              </button>
+              {statusExpanded && (
+                <div className="px-3 pb-3 space-y-2">
+                  {statuses.map((status: any) => (
+                    <label key={status.id} className="flex items-center cursor-pointer">
                       <input
                         type="checkbox"
-                        checked={selectedPlatformIds.includes(platform.id)}
-                        onChange={() => togglePlatform(platform.id)}
+                        checked={selectedStatuses.includes(status.slug)}
+                        onChange={() => toggleStatus(status.slug)}
                         className="mr-2"
                       />
-                      <span className="text-sm">
-                        {platform.name}{' '}
-                        <span className="text-gray-400">
-                          ({platformCounts[platform.id] || 0})
-                        </span>
-                      </span>
+                      <span className="text-sm">{status.name}</span>
                     </label>
                   ))}
                 </div>
               )}
             </div>
 
-            {/* Rating Filter */}
-            <div>
-              <h3 className="font-semibold mb-3">Minimum Rating</h3>
-              <div className="space-y-2">
-                <label className="flex items-center cursor-pointer">
-                  <input
-                    type="radio"
-                    name="rating"
-                    checked={minRating === null}
-                    onChange={() => setMinRating(null)}
-                    className="mr-2"
-                  />
-                  <span className="text-sm">All Ratings</span>
-                </label>
-                {[4, 3, 2, 1].map((rating) => (
-                  <label key={rating} className="flex items-center cursor-pointer">
-                    <input
-                      type="radio"
-                      name="rating"
-                      checked={minRating === rating}
-                      onChange={() => setMinRating(rating)}
-                      className="mr-2"
-                    />
-                    <div className="flex items-center">
-                      {Array.from({ length: rating }).map((_, i) => (
-                        <Star key={i} className="h-3 w-3 fill-yellow-400 text-yellow-400" />
-                      ))}
-                      <span className="ml-1 text-sm">& up</span>
-                    </div>
-                  </label>
-                ))}
-              </div>
+            {/* Phase Filter */}
+            <div className="border rounded-lg">
+              <button
+                onClick={() => setPhaseExpanded(!phaseExpanded)}
+                className="w-full flex items-center justify-between p-3 hover:bg-muted/50 transition-colors"
+              >
+                <div className="flex items-center gap-2">
+                  <span className="font-semibold">Phase</span>
+                  {selectedPhases.length > 0 && (
+                    <Badge variant="secondary" className="text-xs">
+                      {selectedPhases.length}
+                    </Badge>
+                  )}
+                </div>
+                {phaseExpanded ? <ChevronDown className="h-4 w-4" /> : <ChevronRight className="h-4 w-4" />}
+              </button>
+              {phaseExpanded && (
+                <div className="px-3 pb-3 space-y-2">
+                  {phases.map((phase: any) => (
+                    <label key={phase.id} className="flex items-center cursor-pointer">
+                      <input
+                        type="checkbox"
+                        checked={selectedPhases.includes(phase.slug)}
+                        onChange={() => togglePhase(phase.slug)}
+                        className="mr-2"
+                      />
+                      <span className="text-sm">{phase.name}</span>
+                    </label>
+                  ))}
+                </div>
+              )}
+            </div>
+
+            {/* Benefit Filter */}
+            <div className="border rounded-lg">
+              <button
+                onClick={() => setBenefitExpanded(!benefitExpanded)}
+                className="w-full flex items-center justify-between p-3 hover:bg-muted/50 transition-colors"
+              >
+                <div className="flex items-center gap-2">
+                  <span className="font-semibold">Benefit Level</span>
+                  {selectedBenefits.length > 0 && (
+                    <Badge variant="secondary" className="text-xs">
+                      {selectedBenefits.length}
+                    </Badge>
+                  )}
+                </div>
+                {benefitExpanded ? <ChevronDown className="h-4 w-4" /> : <ChevronRight className="h-4 w-4" />}
+              </button>
+              {benefitExpanded && (
+                <div className="px-3 pb-3 space-y-2">
+                  {benefits.map((benefit: any) => (
+                    <label key={benefit.id} className="flex items-center cursor-pointer">
+                      <input
+                        type="checkbox"
+                        checked={selectedBenefits.includes(benefit.slug)}
+                        onChange={() => toggleBenefit(benefit.slug)}
+                        className="mr-2"
+                      />
+                      <span className="text-sm">{benefit.name}</span>
+                    </label>
+                  ))}
+                </div>
+              )}
+            </div>
+
+            {/* Ops Status Filter */}
+            <div className="border rounded-lg">
+              <button
+                onClick={() => setOpsStatusExpanded(!opsStatusExpanded)}
+                className="w-full flex items-center justify-between p-3 hover:bg-muted/50 transition-colors"
+              >
+                <div className="flex items-center gap-2">
+                  <span className="font-semibold">Operational Status</span>
+                  {selectedOpsStatuses.length > 0 && (
+                    <Badge variant="secondary" className="text-xs">
+                      {selectedOpsStatuses.length}
+                    </Badge>
+                  )}
+                </div>
+                {opsStatusExpanded ? <ChevronDown className="h-4 w-4" /> : <ChevronRight className="h-4 w-4" />}
+              </button>
+              {opsStatusExpanded && (
+                <div className="px-3 pb-3 space-y-2">
+                  {opsStatuses.map((opsStatus: any) => (
+                    <label key={opsStatus.id} className="flex items-center cursor-pointer">
+                      <input
+                        type="checkbox"
+                        checked={selectedOpsStatuses.includes(opsStatus.slug)}
+                        onChange={() => toggleOpsStatus(opsStatus.slug)}
+                        className="mr-2"
+                      />
+                      <span className="text-sm">{opsStatus.name}</span>
+                    </label>
+                  ))}
+                </div>
+              )}
             </div>
 
             {/* Clear Filters */}
-            {(selectedPlatformIds.length > 0 ||
-              minRating !== null ||
-              searchQuery) && (
+            {activeFilterCount > 0 && (
               <Button
                 variant="outline"
                 size="sm"
                 onClick={() => {
-                  setSelectedPlatformIds([])
-                  setMinRating(null)
+                  setSelectedStatuses([])
+                  setSelectedPhases([])
+                  setSelectedBenefits([])
+                  setSelectedOpsStatuses([])
                   setSearchQuery('')
                 }}
                 className="w-full"
@@ -245,7 +286,7 @@ export default function BrowsePage() {
         <div className="flex-1">
           <div className="mb-4 text-sm text-muted-foreground">
             {isLoading ? (
-              'Please Refresh the Page'
+              'Loading agents...'
             ) : error ? (
               'Error loading agents'
             ) : (
@@ -275,26 +316,11 @@ export default function BrowsePage() {
             </div>
           ) : (
             <div className="grid md:grid-cols-2 xl:grid-cols-3 gap-6">
-              {agents.map((agent) => (
+              {agents.map((agent: any) => (
                 <AgentCard key={agent.id} agent={agent} />
               ))}
             </div>
           )}
-
-          {/* Pagination - Future Enhancement */}
-          {/* <div className="mt-8 flex justify-center">
-            <div className="flex gap-2">
-              <Button variant="outline" size="sm" disabled>
-                Previous
-              </Button>
-              <Button variant="outline" size="sm" className="bg-primary text-primary-foreground">
-                1
-              </Button>
-              <Button variant="outline" size="sm">
-                Next
-              </Button>
-            </div>
-          </div> */}
         </div>
       </div>
     </div>

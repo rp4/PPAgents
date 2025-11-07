@@ -40,7 +40,7 @@ import { useAgent } from '@/hooks/useAgents'
 import { useIncrementViews } from '@/hooks/useAgents'
 import { trackDownload, createReport } from '@/lib/supabase/mutations'
 import { FavoriteButton } from '@/components/agents/FavoriteButton'
-import { createClient } from '@/lib/supabase/client'
+import { useSession, signIn } from 'next-auth/react'
 import { notFound } from 'next/navigation'
 import Link from 'next/link'
 import Image from 'next/image'
@@ -56,23 +56,30 @@ export default function AgentDetailPage({
   params: Promise<{ id: string }>
 }) {
   const { id: slug } = use(params)
-  const router = useRouter()
-  const supabase = createClient()
+  console.log('=== AgentDetailPage rendered ===')
+  console.log('Slug from params:', slug)
 
-  // Get current user
-  const [user, setUser] = useState<any>(null)
+  const router = useRouter()
+  const { data: session, status } = useSession()
+  const user = session?.user
+  console.log('Session status:', status)
+  console.log('User ID:', user?.id)
+
   const [shareDialogOpen, setShareDialogOpen] = useState(false)
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false)
   const [isReporting, setIsReporting] = useState(false)
   const [isDownloading, setIsDownloading] = useState(false)
   const documentRef = useRef<HTMLDivElement>(null)
 
-  useEffect(() => {
-    supabase.auth.getUser().then(({ data: { user } }) => setUser(user))
-  }, [supabase])
-
   // Fetch agent data
   const { data: agent, isLoading, error } = useAgent(slug, user?.id)
+  console.log('Agent query state:', { isLoading, hasError: !!error, hasAgent: !!agent })
+  if (agent) {
+    console.log('Agent loaded:', { id: agent.id, slug: agent.slug, name: agent.name })
+  }
+  if (error) {
+    console.error('Agent query error:', error)
+  }
   const { mutate: incrementViews } = useIncrementViews()
 
   // Track view on mount
@@ -195,7 +202,7 @@ export default function AgentDetailPage({
                 {agent.agent_platforms.map((ap: any) => (
                   <span
                     key={ap.platform_id}
-                    className="text-xs bg-purple-100 text-purple-700 px-3 py-1 rounded-full font-medium"
+                    className="text-xs bg-blue-100 text-blue-700 px-3 py-1 rounded-full font-medium"
                   >
                     {ap.platform?.name || 'Unknown Platform'}
                   </span>
@@ -210,16 +217,80 @@ export default function AgentDetailPage({
         </div>
 
         {/* Tags */}
-        {agent.tags && agent.tags.length > 0 && (
+        {agent.agentTags && agent.agentTags.length > 0 && (
           <div className="flex flex-wrap gap-2 mb-6">
-            {agent.tags.map((tag) => (
+            {agent.agentTags.map((agentTag: any) => (
               <span
-                key={tag}
+                key={agentTag.tag.id}
                 className="text-xs bg-muted px-3 py-1.5 rounded-full hover:bg-muted/80 transition-colors"
+                style={agentTag.tag.color ? { backgroundColor: agentTag.tag.color + '20', color: agentTag.tag.color } : undefined}
               >
-                #{tag}
+                #{agentTag.tag.name}
               </span>
             ))}
+          </div>
+        )}
+
+        {/* Metadata */}
+        <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-6 p-4 bg-muted/50 rounded-lg">
+          {agent.status && (
+            <div>
+              <p className="text-xs text-muted-foreground mb-1">Status</p>
+              <span className={`text-sm font-medium px-2 py-1 rounded inline-block`} style={{ backgroundColor: agent.status.color + '20', color: agent.status.color }}>
+                {agent.status.name}
+              </span>
+            </div>
+          )}
+          {agent.phase && (
+            <div>
+              <p className="text-xs text-muted-foreground mb-1">Phase</p>
+              <span className={`text-sm font-medium px-2 py-1 rounded inline-block`} style={{ backgroundColor: agent.phase.color + '20', color: agent.phase.color }}>
+                {agent.phase.name}
+              </span>
+            </div>
+          )}
+          {agent.benefit && (
+            <div>
+              <p className="text-xs text-muted-foreground mb-1">Benefit Level</p>
+              <span className={`text-sm font-medium px-2 py-1 rounded inline-block`} style={{ backgroundColor: agent.benefit.color + '20', color: agent.benefit.color }}>
+                {agent.benefit.name}
+              </span>
+            </div>
+          )}
+          {agent.opsStatus && (
+            <div>
+              <p className="text-xs text-muted-foreground mb-1">Operational Status</p>
+              <span className={`text-sm font-medium px-2 py-1 rounded inline-block`} style={{ backgroundColor: agent.opsStatus.color + '20', color: agent.opsStatus.color }}>
+                {agent.opsStatus.name}
+              </span>
+            </div>
+          )}
+        </div>
+
+        {/* Additional Information */}
+        {(agent.data || agent.benefitsDesc || agent.link) && (
+          <div className="space-y-4 mb-6 p-4 bg-muted/30 rounded-lg">
+            {agent.benefitsDesc && (
+              <div>
+                <h3 className="text-sm font-semibold mb-2">Benefits</h3>
+                <p className="text-sm text-muted-foreground">{agent.benefitsDesc}</p>
+              </div>
+            )}
+            {agent.data && (
+              <div>
+                <h3 className="text-sm font-semibold mb-2">Additional Data</h3>
+                <p className="text-sm text-muted-foreground whitespace-pre-wrap">{agent.data}</p>
+              </div>
+            )}
+            {agent.link && (
+              <div>
+                <h3 className="text-sm font-semibold mb-2">External Link</h3>
+                <a href={agent.link} target="_blank" rel="noopener noreferrer" className="text-sm text-primary hover:underline inline-flex items-center gap-1">
+                  {agent.link}
+                  <ExternalLink className="h-3 w-3" />
+                </a>
+              </div>
+            )}
           </div>
         )}
 

@@ -20,6 +20,11 @@ const nextConfig = {
         protocol: 'https',
         hostname: '**.supabase.co',
       },
+      // Google profile images (OAuth)
+      {
+        protocol: 'https',
+        hostname: 'lh3.googleusercontent.com',
+      },
       // LinkedIn profile images
       {
         protocol: 'https',

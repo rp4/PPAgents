@@ -31,35 +31,19 @@ export default function EditAgentPage({
   params: Promise<{ id: string }>
 }) {
   const { id: slug } = use(params)
-  const [user, setUser] = useState<any>(null)
-  const [isLoading, setIsLoading] = useState(true)
+  const { data: session, status } = useSession()
+  const user = session?.user
   const [submitError, setSubmitError] = useState<string | null>(null)
   const [documentationContent, setDocumentationContent] = useState<JSONContent | null>(null)
   const [documentationImages, setDocumentationImages] = useState<string[]>([])
   const router = useRouter()
-  const supabase = createClient()
 
-  // Fetch current user
+  // Redirect if not authenticated
   useEffect(() => {
-    const checkUser = async () => {
-      try {
-        const { data: { user } } = await supabase.auth.getUser()
-        setUser(user)
-        setIsLoading(false)
-      } catch (error) {
-        console.error('Error checking user:', error)
-        setIsLoading(false)
-      }
+    if (status === 'unauthenticated') {
+      router.push('/auth/signin')
     }
-
-    checkUser()
-
-    const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
-      setUser(session?.user ?? null)
-    })
-
-    return () => subscription.unsubscribe()
-  }, [supabase])
+  }, [status, router])
 
   // Fetch agent data
   const { data: agent, isLoading: loadingAgent, error: agentError } = useAgent(slug, user?.id)
@@ -200,7 +184,7 @@ export default function EditAgentPage({
     return (
       <div className="container max-w-4xl mx-auto px-4 py-8">
         <div className="flex items-center justify-center min-h-[400px]">
-          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-purple-600"></div>
+          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600"></div>
         </div>
       </div>
     )
@@ -311,8 +295,8 @@ export default function EditAgentPage({
                       onClick={() => togglePlatform(platform.id)}
                       className={`p-3 border rounded-lg text-sm transition-colors ${
                         selectedPlatforms.includes(platform.id)
-                          ? 'bg-purple-50 border-purple-500 text-purple-700'
-                          : 'border-gray-300 hover:border-purple-300'
+                          ? 'bg-blue-50 border-blue-500 text-blue-700'
+                          : 'border-gray-300 hover:border-blue-300'
                       }`}
                     >
                       {platform.name}

@@ -243,7 +243,7 @@ export default function DashboardPage() {
                       <div className="mt-0.5">
                         {activity.type === "download" && <Download className="h-4 w-4 text-blue-500" />}
                         {activity.type === "upvote" && <ThumbsUp className="h-4 w-4 text-green-500" />}
-                        {activity.type === "comment" && <Bot className="h-4 w-4 text-purple-500" />}
+                        {activity.type === "comment" && <Bot className="h-4 w-4 text-blue-500" />}
                       </div>
                       <div className="flex-1">
                         <p className="text-muted-foreground">
