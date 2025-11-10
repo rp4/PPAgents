@@ -11,7 +11,6 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Input } from "@/components/ui/input"
 import { ArrowLeft, Save } from "lucide-react"
 import { updateProfileSchema, type UpdateProfileInput } from "@/lib/validations/agent"
-import { updateProfile } from "@/lib/supabase/mutations"
 import Link from "next/link"
 import { useState } from "react"
 import { useQuery } from "@tanstack/react-query"
@@ -65,7 +64,15 @@ export default function EditProfilePage() {
 
     setIsSaving(true)
     try {
-      await updateProfile(session.user.id, data)
+      // TODO: Use API route to update profile
+      const res = await fetch(`/api/profiles/${session.user.id}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(data),
+      })
+
+      if (!res.ok) throw new Error('Failed to update profile')
+
       toast.success('Profile updated successfully!')
       router.push(`/profile/${data.username || profile?.username}`)
     } catch (error: any) {

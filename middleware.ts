@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server';
 import type { NextRequest } from 'next/server';
 import { getToken } from 'next-auth/jwt';
 import { checkRateLimit, getLimiterForPath } from './src/lib/ratelimit';
+import { generateCSRFToken, validateCSRFToken, CSRF_COOKIE_OPTIONS, CSRF_HEADER_NAME } from './src/lib/security/csrf';
 import crypto from 'crypto';
 
 export async function middleware(request: NextRequest) {
@@ -45,7 +46,7 @@ export async function middleware(request: NextRequest) {
     request.method !== 'HEAD' &&
     request.method !== 'OPTIONS'
   ) {
-    // Verify Origin header matches the request host
+    // First layer: Verify Origin header matches the request host
     const origin = request.headers.get('origin');
     const host = request.headers.get('host');
 
@@ -53,6 +54,20 @@ export async function middleware(request: NextRequest) {
       const originHost = new URL(origin).host;
       if (originHost !== host) {
         return NextResponse.json({ error: 'Invalid origin' }, { status: 403 });
+      }
+    }
+
+    // Second layer: CSRF token validation (double-submit cookie pattern)
+    // Skip for auth endpoints as they have their own protection
+    if (!pathname.startsWith('/api/auth')) {
+      const cookieToken = request.cookies.get(CSRF_COOKIE_OPTIONS.name)?.value;
+      const headerToken = request.headers.get(CSRF_HEADER_NAME) || undefined;
+
+      if (!validateCSRFToken(cookieToken, headerToken)) {
+        return NextResponse.json(
+          { error: 'Invalid CSRF token' },
+          { status: 403 }
+        );
       }
     }
   }
@@ -88,6 +103,16 @@ export async function middleware(request: NextRequest) {
   response.headers.set('X-RateLimit-Limit', result.limit.toString());
   response.headers.set('X-RateLimit-Remaining', result.remaining.toString());
   response.headers.set('X-RateLimit-Reset', new Date(result.reset).toISOString());
+
+  // Set or refresh CSRF token for authenticated users
+  // Only set on GET requests to avoid issues with POST
+  if (token && request.method === 'GET' && !isPublicPath) {
+    const existingCsrfToken = request.cookies.get(CSRF_COOKIE_OPTIONS.name);
+    if (!existingCsrfToken) {
+      const csrfToken = generateCSRFToken();
+      response.cookies.set(CSRF_COOKIE_OPTIONS.name, csrfToken, CSRF_COOKIE_OPTIONS);
+    }
+  }
 
   // Enhanced security headers
   response.headers.set('X-Frame-Options', 'DENY');

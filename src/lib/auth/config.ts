@@ -3,6 +3,8 @@ import { PrismaAdapter } from '@next-auth/prisma-adapter';
 import GoogleProvider from 'next-auth/providers/google';
 import AzureADProvider from 'next-auth/providers/azure-ad';
 import { prisma } from '@/lib/db/client';
+import { generateSafeUsername, validateUsername } from '@/lib/security/sanitize';
+import { logger, logSecurityEvent } from '@/lib/security/logger';
 
 export const authOptions: NextAuthOptions = {
   adapter: PrismaAdapter(prisma),
@@ -41,7 +43,8 @@ export const authOptions: NextAuthOptions = {
 
   session: {
     strategy: 'jwt', // Use JWT for stateless sessions (recommended for serverless)
-    maxAge: 30 * 24 * 60 * 60, // 30 days
+    maxAge: 7 * 24 * 60 * 60, // 7 days (reduced from 30 for security)
+    updateAge: 24 * 60 * 60, // Refresh token daily
   },
 
   pages: {
@@ -58,7 +61,10 @@ export const authOptions: NextAuthOptions = {
         const emailDomain = user.email?.split('@')[1];
 
         if (emailDomain && !allowedDomains.includes(emailDomain)) {
-          console.warn(`Sign-in blocked for domain: ${emailDomain}`);
+          logSecurityEvent('signin_blocked_domain', 'medium', {
+            domain: emailDomain,
+            provider: account?.provider,
+          });
           return false;
         }
       }
@@ -70,14 +76,25 @@ export const authOptions: NextAuthOptions = {
       // Add user ID to token on sign-in
       if (user) {
         token.id = user.id;
+
+        // Fetch username from profile
+        const userProfile = await prisma.profile.findUnique({
+          where: { id: user.id },
+          select: { username: true },
+        });
+
+        if (userProfile) {
+          token.username = userProfile.username;
+        }
       }
       return token;
     },
 
     async session({ session, token }) {
-      // Add user ID to session
+      // Add user ID and username to session
       if (session.user && token.id) {
         session.user.id = token.id as string;
+        session.user.username = token.username as string | null;
       }
       return session;
     },
@@ -85,47 +102,57 @@ export const authOptions: NextAuthOptions = {
 
   events: {
     async signIn({ user, isNewUser }) {
-      console.log(`User signed in: ${user.email} (new user: ${isNewUser})`);
+      logger.info('User signed in', { userId: user.id, isNewUser });
 
-      // Create profile for new users - delayed to ensure user exists
+      // Create profile for new users using proper transaction handling
       if (isNewUser && user.id && user.email) {
-        // Use setTimeout to delay profile creation until after the user transaction commits
-        setTimeout(async () => {
-          try {
-            const existingProfile = await prisma.profile.findUnique({
+        try {
+          await prisma.$transaction(async (tx) => {
+            // Check if profile already exists
+            const existingProfile = await tx.profile.findUnique({
               where: { id: user.id },
             });
 
-            if (!existingProfile) {
-              const username = user.email.split('@')[0].toLowerCase().replace(/[^a-z0-9]/g, '');
-
-              // Ensure unique username
-              let finalUsername = username;
-              let counter = 1;
-              while (await prisma.profile.findUnique({ where: { username: finalUsername } })) {
-                finalUsername = `${username}${counter}`;
-                counter++;
-              }
-
-              await prisma.profile.create({
-                data: {
-                  id: user.id,
-                  username: finalUsername,
-                  fullName: user.name || '',
-                  avatarUrl: user.image || '',
-                },
-              });
-
-              console.log(`Created profile for user: ${user.email} with username: ${finalUsername}`);
+            if (existingProfile) {
+              return; // Profile already exists, skip creation
             }
-          } catch (error) {
-            console.error('Error creating profile:', error);
-          }
-        }, 1000); // Delay 1 second to ensure user transaction completes
+
+            // Generate safe username from email
+            let username = generateSafeUsername(user.email);
+
+            // Ensure username is unique
+            let counter = 1;
+            while (await tx.profile.findUnique({ where: { username } })) {
+              username = `${username}${counter}`;
+              counter++;
+            }
+
+            // Validate final username
+            const validation = validateUsername(username);
+            if (!validation.valid) {
+              // Fallback to UUID-based username if validation fails
+              username = `user_${user.id.substring(0, 8)}`;
+            }
+
+            // Create profile
+            await tx.profile.create({
+              data: {
+                id: user.id,
+                username,
+                fullName: user.name || '',
+                avatarUrl: user.image || '',
+              },
+            });
+
+            logger.info('Profile created', { userId: user.id, username });
+          });
+        } catch (error) {
+          logger.error('Failed to create profile', {
+            userId: user.id,
+            error: error instanceof Error ? error.message : String(error),
+          });
+        }
       }
-    },
-    async signOut({ session, token }) {
-      console.log(`User signed out`);
     },
   },
 

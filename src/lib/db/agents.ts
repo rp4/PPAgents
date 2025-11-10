@@ -1,5 +1,6 @@
 import { prisma } from './client';
 import { Prisma } from '@prisma/client';
+import { logger } from '@/lib/security/logger';
 
 export interface AgentFilters {
   search?: string;
@@ -13,7 +14,7 @@ export interface AgentFilters {
 }
 
 export interface AgentSort {
-  field: 'createdAt' | 'avgRating' | 'downloadsCount' | 'favoritesCount';
+  field: 'createdAt' | 'favoritesCount' | 'viewsCount';
   order: 'asc' | 'desc';
 }
 
@@ -28,6 +29,10 @@ export async function getAgents({
   limit?: number;
   offset?: number;
 }) {
+  // Enforce maximum limits to prevent abuse
+  const MAX_LIMIT = 100;
+  const safeLimit = Math.min(Math.max(1, limit), MAX_LIMIT);
+  const safeOffset = Math.max(0, offset);
   const where: Prisma.AgentWhereInput = {
     isPublic: true,
   };
@@ -37,6 +42,8 @@ export async function getAgents({
     where.OR = [
       { name: { contains: filters.search, mode: 'insensitive' } },
       { description: { contains: filters.search, mode: 'insensitive' } },
+      { benefitsDesc: { contains: filters.search, mode: 'insensitive' } },
+      { data: { contains: filters.search, mode: 'insensitive' } },
     ];
   }
 
@@ -82,9 +89,27 @@ export async function getAgents({
     prisma.agent.findMany({
       where,
       orderBy,
-      skip: offset,
-      take: limit,
-      include: {
+      skip: safeOffset,
+      take: safeLimit,
+      select: {
+        id: true,
+        userId: true,
+        name: true,
+        slug: true,
+        description: true,
+        categoryId: true,
+        statusId: true,
+        phaseId: true,
+        benefitId: true,
+        opsStatusId: true,
+        instructions: true,
+        configuration: true,
+        isPublic: true,
+        isFeatured: true,
+        favoritesCount: true,
+        viewsCount: true,
+        createdAt: true,
+        updatedAt: true,
         user: {
           select: {
             id: true,
@@ -154,71 +179,84 @@ export async function getAgents({
   const agents = agentsRaw.map(agent => ({
     ...agent,
     profile: agent.user, // Alias user to profile for frontend compatibility
+    favorites_count: agent.favoritesCount, // Map to snake_case for frontend
+    views_count: agent.viewsCount,
+    user_id: agent.userId,
+    category_id: agent.categoryId,
+    status_id: agent.statusId,
+    phase_id: agent.phaseId,
+    benefit_id: agent.benefitId,
+    ops_status_id: agent.opsStatusId,
+    is_public: agent.isPublic,
+    is_featured: agent.isFeatured,
+    created_at: agent.createdAt,
+    updated_at: agent.updatedAt,
+    agent_platforms: [], // Placeholder - platforms not yet implemented
   }));
 
   return { agents, total, hasMore: offset + agents.length < total };
 }
 
 export async function getAgentBySlug(slug: string, userId?: string) {
-  console.log('[DB] getAgentBySlug - Looking for slug:', slug);
-  console.log('[DB] getAgentBySlug - User ID:', userId);
+  logger.debug('Fetching agent by slug', { slug, hasUserId: !!userId });
 
-  const agent = await prisma.agent.findUnique({
-    where: { slug },
-    include: {
-      user: {
-        select: {
-          id: true,
-          username: true,
-          fullName: true,
-          avatarUrl: true,
-          isVerified: true,
-          bio: true,
+  let agent;
+  try {
+    agent = await prisma.agent.findUnique({
+      where: { slug },
+      include: {
+        user: {
+          select: {
+            id: true,
+            username: true,
+            fullName: true,
+            avatarUrl: true,
+            isVerified: true,
+            bio: true,
+          },
         },
-      },
-      category: true,
-      status: true,
-      phase: true,
-      benefit: true,
-      opsStatus: true,
-      agentTags: {
-        include: {
-          tag: true,
+        category: true,
+        status: true,
+        phase: true,
+        benefit: true,
+        opsStatus: true,
+        agentTags: {
+          include: {
+            tag: true,
+          },
         },
+        favorites: userId ? { where: { userId } } : false,
       },
-      favorites: userId ? { where: { userId } } : false,
-      ratings: userId ? { where: { userId } } : false,
-    },
-  });
-
-  console.log('[DB] getAgentBySlug - Agent found in DB:', agent ? `Yes (ID: ${agent.id}, slug: ${agent.slug})` : 'No');
-
-  if (agent) {
-    console.log('[DB] getAgentBySlug - Agent.isPublic:', agent.isPublic);
-    console.log('[DB] getAgentBySlug - Agent.userId:', agent.userId);
-    console.log('[DB] getAgentBySlug - Requesting userId:', userId);
-    console.log('[DB] getAgentBySlug - Is owner?:', agent.userId === userId);
+    });
+  } catch (error) {
+    logger.error('Error fetching agent by slug', { slug, error });
+    throw error;
   }
 
   if (!agent) {
-    console.log('[DB] getAgentBySlug - Returning null: Agent not found in DB');
+    logger.debug('Agent not found', { slug });
     return null;
   }
 
   // Check access permissions
   if (!agent.isPublic && agent.userId !== userId) {
-    console.log('[DB] getAgentBySlug - Returning null: Agent is not public and user is not the owner');
-    console.log('[DB] getAgentBySlug - Access denied because: isPublic =', agent.isPublic, ', userId mismatch =', agent.userId !== userId);
+    logger.debug('Access denied to private agent', {
+      slug,
+      isPublic: agent.isPublic,
+      isOwner: agent.userId === userId
+    });
     return null;
   }
 
-  console.log('[DB] getAgentBySlug - Access granted, returning agent');
+  logger.debug('Agent access granted', { slug, agentId: agent.id });
 
   // Transform the response to match frontend expectations
   // The frontend expects 'profile' but Prisma returns 'user'
   return {
     ...agent,
     profile: agent.user, // Alias user to profile for frontend compatibility
+    user_id: agent.userId, // Add user_id for frontend compatibility
+    user_favorited: agent.favorites && agent.favorites.length > 0, // Check if user has favorited
   };
 }
 
@@ -240,9 +278,7 @@ export async function createAgent(data: {
   link?: string;
 }) {
   const slug = generateSlug(data.name);
-  console.log('[DB] createAgent - Generated slug:', slug);
-  console.log('[DB] createAgent - Agent name:', data.name);
-  console.log('[DB] createAgent - User ID:', data.userId);
+  logger.info('Creating agent', { slug, name: data.name, userId: data.userId });
 
   const agent = await prisma.agent.create({
     data: {
@@ -281,16 +317,7 @@ export async function createAgent(data: {
     },
   });
 
-  console.log('[DB] createAgent - Agent created successfully in DB');
-  console.log('[DB] createAgent - Agent ID:', agent.id);
-  console.log('[DB] createAgent - Agent slug:', agent.slug);
-  console.log('[DB] createAgent - Agent isPublic:', agent.isPublic);
-
-  // Verify the agent was created and can be retrieved
-  const verification = await prisma.agent.findUnique({
-    where: { slug: agent.slug },
-  });
-  console.log('[DB] createAgent - Verification query result:', verification ? `Found (slug: ${verification.slug})` : 'NOT FOUND!');
+  logger.info('Agent created successfully', { agentId: agent.id, slug: agent.slug });
 
   return agent;
 }
@@ -407,71 +434,30 @@ export async function toggleFavorite(userId: string, agentId: string) {
 
   if (existing) {
     // Remove favorite
-    await prisma.favorite.delete({
-      where: { id: existing.id },
-    });
-
-    await prisma.agent.update({
-      where: { id: agentId },
-      data: { favoritesCount: { decrement: 1 } },
-    });
+    await prisma.$transaction([
+      prisma.favorite.delete({
+        where: { id: existing.id },
+      }),
+      prisma.agent.update({
+        where: { id: agentId },
+        data: { favoritesCount: { decrement: 1 } },
+      }),
+    ]);
 
     return { favorited: false };
   } else {
     // Add favorite
-    await prisma.favorite.create({
-      data: { userId, agentId },
-    });
-
-    await prisma.agent.update({
-      where: { id: agentId },
-      data: { favoritesCount: { increment: 1 } },
-    });
+    await prisma.$transaction([
+      prisma.favorite.create({
+        data: { userId, agentId },
+      }),
+      prisma.agent.update({
+        where: { id: agentId },
+        data: { favoritesCount: { increment: 1 } },
+      }),
+    ]);
 
     return { favorited: true };
   }
 }
 
-export async function rateAgent(
-  userId: string,
-  agentId: string,
-  score: number,
-  review?: string
-) {
-  const rating = await prisma.rating.upsert({
-    where: {
-      userId_agentId: {
-        userId,
-        agentId,
-      },
-    },
-    update: {
-      score,
-      review,
-    },
-    create: {
-      userId,
-      agentId,
-      score,
-      review,
-    },
-  });
-
-  // Update agent average rating
-  const ratings = await prisma.rating.findMany({
-    where: { agentId },
-    select: { score: true },
-  });
-
-  const avgRating = ratings.reduce((sum, r) => sum + r.score, 0) / ratings.length;
-
-  await prisma.agent.update({
-    where: { id: agentId },
-    data: {
-      avgRating,
-      totalRatings: ratings.length,
-    },
-  });
-
-  return rating;
-}

@@ -5,9 +5,10 @@ import { useDebounce } from 'use-debounce'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Badge } from '@/components/ui/badge'
-import { Filter, Search, Star, ChevronDown, ChevronRight } from 'lucide-react'
-import { useAgents, useStatuses, usePhases, useBenefits, useOpsStatuses } from '@/hooks/useAgentsAPI'
-import { AgentCard } from '@/components/agents/AgentCard'
+import { Filter, Search, ChevronDown, ChevronRight } from 'lucide-react'
+import { useAgents } from '@/hooks/useAgents'
+import { useStatuses, usePhases, useBenefits, useOpsStatuses } from '@/hooks/useAgentsAPI'
+import { PaginatedAgentGrid } from '@/components/agents/PaginatedAgentGrid'
 
 export default function BrowsePage() {
   const [searchQuery, setSearchQuery] = useState('')
@@ -16,14 +17,16 @@ export default function BrowsePage() {
   const [selectedPhases, setSelectedPhases] = useState<string[]>([])
   const [selectedBenefits, setSelectedBenefits] = useState<string[]>([])
   const [selectedOpsStatuses, setSelectedOpsStatuses] = useState<string[]>([])
-  const [sortBy, setSortBy] = useState<'createdAt' | 'avgRating' | 'downloadsCount' | 'favoritesCount'>('createdAt')
+  const [sortBy, setSortBy] = useState<'createdAt' | 'favoritesCount' | 'viewsCount'>('createdAt')
   const [showFilters, setShowFilters] = useState(false)
+  const [currentPage, setCurrentPage] = useState(1)
+  const pageSize = 12
 
-  // Collapsible state for each filter section
+  // Collapsible state for each filter section - status expanded by default
   const [statusExpanded, setStatusExpanded] = useState(true)
-  const [phaseExpanded, setPhaseExpanded] = useState(true)
-  const [benefitExpanded, setBenefitExpanded] = useState(true)
-  const [opsStatusExpanded, setOpsStatusExpanded] = useState(true)
+  const [phaseExpanded, setPhaseExpanded] = useState(false)
+  const [benefitExpanded, setBenefitExpanded] = useState(false)
+  const [opsStatusExpanded, setOpsStatusExpanded] = useState(false)
 
   // Fetch all filter options
   const { data: statusesResponse } = useStatuses()
@@ -46,14 +49,16 @@ export default function BrowsePage() {
       opsStatuses: selectedOpsStatuses.length > 0 ? selectedOpsStatuses.join(',') : undefined,
       sortBy,
       order: 'desc' as const,
-      limit: 50,
+      limit: pageSize,
+      offset: (currentPage - 1) * pageSize,
     }),
-    [debouncedSearchQuery, selectedStatuses, selectedPhases, selectedBenefits, selectedOpsStatuses, sortBy]
+    [debouncedSearchQuery, selectedStatuses, selectedPhases, selectedBenefits, selectedOpsStatuses, sortBy, currentPage, pageSize]
   )
 
   // Fetch agents
   const { data: agentsResponse, isLoading, error } = useAgents(queryParams)
   const agents = agentsResponse?.agents || []
+  const totalCount = agentsResponse?.total || 0
 
   // Calculate active filter count
   const activeFilterCount = useMemo(() => {
@@ -65,24 +70,33 @@ export default function BrowsePage() {
     setSelectedStatuses(prev =>
       prev.includes(slug) ? prev.filter(s => s !== slug) : [...prev, slug]
     )
+    setCurrentPage(1)
   }
 
   const togglePhase = (slug: string) => {
     setSelectedPhases(prev =>
       prev.includes(slug) ? prev.filter(s => s !== slug) : [...prev, slug]
     )
+    setCurrentPage(1)
   }
 
   const toggleBenefit = (slug: string) => {
     setSelectedBenefits(prev =>
       prev.includes(slug) ? prev.filter(s => s !== slug) : [...prev, slug]
     )
+    setCurrentPage(1)
   }
 
   const toggleOpsStatus = (slug: string) => {
     setSelectedOpsStatuses(prev =>
       prev.includes(slug) ? prev.filter(s => s !== slug) : [...prev, slug]
     )
+    setCurrentPage(1)
+  }
+
+  // Page change handler
+  const handlePageChange = (page: number) => {
+    setCurrentPage(page)
   }
 
   return (
@@ -90,13 +104,17 @@ export default function BrowsePage() {
       {/* Search and Controls */}
       <div className="flex flex-col lg:flex-row gap-4 mb-6">
         <div className="flex-1 relative">
-          <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-muted-foreground h-4 w-4" />
+          <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-muted-foreground h-4 w-4" aria-hidden="true" />
           <Input
             type="search"
             placeholder="Search agents by name or description..."
+            aria-label="Search agents by name or description"
             className="pl-10"
             value={searchQuery}
-            onChange={(e) => setSearchQuery(e.target.value)}
+            onChange={(e) => {
+              setSearchQuery(e.target.value)
+              setCurrentPage(1)
+            }}
           />
         </div>
         <div className="flex gap-2">
@@ -104,8 +122,10 @@ export default function BrowsePage() {
             variant="outline"
             onClick={() => setShowFilters(!showFilters)}
             className="lg:hidden relative"
+            aria-label={showFilters ? 'Hide filters' : 'Show filters'}
+            aria-expanded={showFilters}
           >
-            <Filter className="h-4 w-4 mr-2" />
+            <Filter className="h-4 w-4 mr-2" aria-hidden="true" />
             Filters
             {activeFilterCount > 0 && (
               <Badge className="ml-2 bg-primary text-primary-foreground">
@@ -116,11 +136,13 @@ export default function BrowsePage() {
           <select
             className="px-4 py-2 border rounded-md text-sm"
             value={sortBy}
-            onChange={(e) => setSortBy(e.target.value as any)}
+            aria-label="Sort agents by"
+            onChange={(e) => {
+              setSortBy(e.target.value as any)
+              setCurrentPage(1)
+            }}
           >
             <option value="createdAt">Most Recent</option>
-            <option value="avgRating">Highest Rated</option>
-            <option value="downloadsCount">Most Downloaded</option>
             <option value="favoritesCount">Most Favorited</option>
           </select>
         </div>
@@ -135,6 +157,8 @@ export default function BrowsePage() {
               <button
                 onClick={() => setStatusExpanded(!statusExpanded)}
                 className="w-full flex items-center justify-between p-3 hover:bg-muted/50 transition-colors"
+                aria-expanded={statusExpanded}
+                aria-controls="status-filter-content"
               >
                 <div className="flex items-center gap-2">
                   <span className="font-semibold">Status</span>
@@ -144,17 +168,18 @@ export default function BrowsePage() {
                     </Badge>
                   )}
                 </div>
-                {statusExpanded ? <ChevronDown className="h-4 w-4" /> : <ChevronRight className="h-4 w-4" />}
+                {statusExpanded ? <ChevronDown className="h-4 w-4" aria-hidden="true" /> : <ChevronRight className="h-4 w-4" aria-hidden="true" />}
               </button>
               {statusExpanded && (
-                <div className="px-3 pb-3 space-y-2">
+                <div id="status-filter-content" className="px-3 pb-3 space-y-2">
                   {statuses.map((status: any) => (
-                    <label key={status.id} className="flex items-center cursor-pointer">
+                    <label key={status.id} className="flex items-center cursor-pointer hover:bg-muted/30 p-1 rounded">
                       <input
                         type="checkbox"
                         checked={selectedStatuses.includes(status.slug)}
                         onChange={() => toggleStatus(status.slug)}
                         className="mr-2"
+                        aria-label={`Filter by ${status.name}`}
                       />
                       <span className="text-sm">{status.name}</span>
                     </label>
@@ -168,6 +193,8 @@ export default function BrowsePage() {
               <button
                 onClick={() => setPhaseExpanded(!phaseExpanded)}
                 className="w-full flex items-center justify-between p-3 hover:bg-muted/50 transition-colors"
+                aria-expanded={phaseExpanded}
+                aria-controls="phase-filter-content"
               >
                 <div className="flex items-center gap-2">
                   <span className="font-semibold">Phase</span>
@@ -177,17 +204,18 @@ export default function BrowsePage() {
                     </Badge>
                   )}
                 </div>
-                {phaseExpanded ? <ChevronDown className="h-4 w-4" /> : <ChevronRight className="h-4 w-4" />}
+                {phaseExpanded ? <ChevronDown className="h-4 w-4" aria-hidden="true" /> : <ChevronRight className="h-4 w-4" aria-hidden="true" />}
               </button>
               {phaseExpanded && (
-                <div className="px-3 pb-3 space-y-2">
+                <div id="phase-filter-content" className="px-3 pb-3 space-y-2">
                   {phases.map((phase: any) => (
-                    <label key={phase.id} className="flex items-center cursor-pointer">
+                    <label key={phase.id} className="flex items-center cursor-pointer hover:bg-muted/30 p-1 rounded">
                       <input
                         type="checkbox"
                         checked={selectedPhases.includes(phase.slug)}
                         onChange={() => togglePhase(phase.slug)}
                         className="mr-2"
+                        aria-label={`Filter by ${phase.name}`}
                       />
                       <span className="text-sm">{phase.name}</span>
                     </label>
@@ -201,6 +229,8 @@ export default function BrowsePage() {
               <button
                 onClick={() => setBenefitExpanded(!benefitExpanded)}
                 className="w-full flex items-center justify-between p-3 hover:bg-muted/50 transition-colors"
+                aria-expanded={benefitExpanded}
+                aria-controls="benefit-filter-content"
               >
                 <div className="flex items-center gap-2">
                   <span className="font-semibold">Benefit Level</span>
@@ -210,17 +240,18 @@ export default function BrowsePage() {
                     </Badge>
                   )}
                 </div>
-                {benefitExpanded ? <ChevronDown className="h-4 w-4" /> : <ChevronRight className="h-4 w-4" />}
+                {benefitExpanded ? <ChevronDown className="h-4 w-4" aria-hidden="true" /> : <ChevronRight className="h-4 w-4" aria-hidden="true" />}
               </button>
               {benefitExpanded && (
-                <div className="px-3 pb-3 space-y-2">
+                <div id="benefit-filter-content" className="px-3 pb-3 space-y-2">
                   {benefits.map((benefit: any) => (
-                    <label key={benefit.id} className="flex items-center cursor-pointer">
+                    <label key={benefit.id} className="flex items-center cursor-pointer hover:bg-muted/30 p-1 rounded">
                       <input
                         type="checkbox"
                         checked={selectedBenefits.includes(benefit.slug)}
                         onChange={() => toggleBenefit(benefit.slug)}
                         className="mr-2"
+                        aria-label={`Filter by ${benefit.name}`}
                       />
                       <span className="text-sm">{benefit.name}</span>
                     </label>
@@ -234,6 +265,8 @@ export default function BrowsePage() {
               <button
                 onClick={() => setOpsStatusExpanded(!opsStatusExpanded)}
                 className="w-full flex items-center justify-between p-3 hover:bg-muted/50 transition-colors"
+                aria-expanded={opsStatusExpanded}
+                aria-controls="ops-status-filter-content"
               >
                 <div className="flex items-center gap-2">
                   <span className="font-semibold">Operational Status</span>
@@ -243,17 +276,18 @@ export default function BrowsePage() {
                     </Badge>
                   )}
                 </div>
-                {opsStatusExpanded ? <ChevronDown className="h-4 w-4" /> : <ChevronRight className="h-4 w-4" />}
+                {opsStatusExpanded ? <ChevronDown className="h-4 w-4" aria-hidden="true" /> : <ChevronRight className="h-4 w-4" aria-hidden="true" />}
               </button>
               {opsStatusExpanded && (
-                <div className="px-3 pb-3 space-y-2">
+                <div id="ops-status-filter-content" className="px-3 pb-3 space-y-2">
                   {opsStatuses.map((opsStatus: any) => (
-                    <label key={opsStatus.id} className="flex items-center cursor-pointer">
+                    <label key={opsStatus.id} className="flex items-center cursor-pointer hover:bg-muted/30 p-1 rounded">
                       <input
                         type="checkbox"
                         checked={selectedOpsStatuses.includes(opsStatus.slug)}
                         onChange={() => toggleOpsStatus(opsStatus.slug)}
                         className="mr-2"
+                        aria-label={`Filter by ${opsStatus.name}`}
                       />
                       <span className="text-sm">{opsStatus.name}</span>
                     </label>
@@ -263,64 +297,51 @@ export default function BrowsePage() {
             </div>
 
             {/* Clear Filters */}
-            {activeFilterCount > 0 && (
-              <Button
-                variant="outline"
-                size="sm"
-                onClick={() => {
-                  setSelectedStatuses([])
-                  setSelectedPhases([])
-                  setSelectedBenefits([])
-                  setSelectedOpsStatuses([])
-                  setSearchQuery('')
-                }}
-                className="w-full"
-              >
-                Clear All Filters
-              </Button>
-            )}
+            <div className="space-y-2">
+              {activeFilterCount > 0 && (
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => {
+                    setSelectedStatuses([])
+                    setSelectedPhases([])
+                    setSelectedBenefits([])
+                    setSelectedOpsStatuses([])
+                    setCurrentPage(1)
+                  }}
+                  className="w-full"
+                >
+                  Clear Filters ({activeFilterCount})
+                </Button>
+              )}
+              {searchQuery && (
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  onClick={() => {
+                    setSearchQuery('')
+                    setCurrentPage(1)
+                  }}
+                  className="w-full"
+                >
+                  Clear Search
+                </Button>
+              )}
+            </div>
           </div>
         </aside>
 
         {/* Agents Grid/List */}
         <div className="flex-1">
-          <div className="mb-4 text-sm text-muted-foreground">
-            {isLoading ? (
-              'Loading agents...'
-            ) : error ? (
-              'Error loading agents'
-            ) : (
-              `Showing ${agents.length} agent${agents.length !== 1 ? 's' : ''}`
-            )}
-          </div>
-
-          {isLoading ? (
-            <div className="grid md:grid-cols-2 xl:grid-cols-3 gap-6">
-              {[1, 2, 3, 4, 5, 6].map((i) => (
-                <div key={i} className="animate-pulse">
-                  <div className="h-64 bg-muted rounded-lg"></div>
-                </div>
-              ))}
-            </div>
-          ) : error ? (
-            <div className="text-center py-12">
-              <p className="text-muted-foreground mb-4">Failed to load agents</p>
-              <Button onClick={() => window.location.reload()}>Retry</Button>
-            </div>
-          ) : agents.length === 0 ? (
-            <div className="text-center py-12">
-              <p className="text-muted-foreground mb-2">No agents found</p>
-              <p className="text-sm text-muted-foreground">
-                Try adjusting your filters or search query
-              </p>
-            </div>
-          ) : (
-            <div className="grid md:grid-cols-2 xl:grid-cols-3 gap-6">
-              {agents.map((agent: any) => (
-                <AgentCard key={agent.id} agent={agent} />
-              ))}
-            </div>
-          )}
+          <PaginatedAgentGrid
+            agents={agents}
+            isLoading={isLoading}
+            error={error}
+            totalCount={totalCount}
+            currentPage={currentPage}
+            pageSize={pageSize}
+            onPageChange={handlePageChange}
+          />
         </div>
       </div>
     </div>

@@ -1,11 +1,39 @@
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
-import { getAgentComments } from '@/lib/supabase/queries'
-import {
-  createComment,
-  updateComment,
-  deleteComment,
-} from '@/lib/supabase/mutations'
-import type { CommentInsert } from '@/types/database'
+
+// API client functions
+async function getAgentComments(agentId: string) {
+  const response = await fetch(`/api/agents/${agentId}/comments`)
+  if (!response.ok) throw new Error('Failed to fetch comments')
+  return response.json()
+}
+
+async function createComment(comment: { agentId: string; content: string; parentId?: string }) {
+  const response = await fetch(`/api/agents/${comment.agentId}/comments`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ content: comment.content, parentId: comment.parentId }),
+  })
+  if (!response.ok) throw new Error('Failed to create comment')
+  return response.json()
+}
+
+async function updateComment(commentId: string, content: string, userId: string) {
+  const response = await fetch(`/api/comments/${commentId}`, {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ content }),
+  })
+  if (!response.ok) throw new Error('Failed to update comment')
+  return response.json()
+}
+
+async function deleteComment(commentId: string, userId: string) {
+  const response = await fetch(`/api/comments/${commentId}`, {
+    method: 'DELETE',
+  })
+  if (!response.ok) throw new Error('Failed to delete comment')
+  return response.json()
+}
 
 // ============================================
 // QUERY HOOKS
@@ -28,10 +56,10 @@ export function useCreateComment() {
   const queryClient = useQueryClient()
 
   return useMutation({
-    mutationFn: (comment: CommentInsert) => createComment(comment),
+    mutationFn: (comment: { agentId: string; content: string; parentId?: string }) => createComment(comment),
     onSuccess: (data: any) => {
       // Invalidate comments for this agent
-      queryClient.invalidateQueries({ queryKey: ['comments', data.agent_id] })
+      queryClient.invalidateQueries({ queryKey: ['comments', data.agentId] })
     },
   })
 }
@@ -52,7 +80,7 @@ export function useUpdateComment() {
       agentId: string
     }) => updateComment(commentId, content, userId),
     onSuccess: (data: any) => {
-      queryClient.invalidateQueries({ queryKey: ['comments', data.agent_id] })
+      queryClient.invalidateQueries({ queryKey: ['comments', data.agentId] })
     },
   })
 }

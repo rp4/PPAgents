@@ -4,22 +4,12 @@ import { use, useEffect, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent } from '@/components/ui/card'
-import { ArrowLeft, Download, Share2, Flag, ExternalLink, Edit, Trash2 } from 'lucide-react'
+import { ArrowLeft, Share2, ExternalLink, Edit, Trash2 } from 'lucide-react'
 import dynamic from 'next/dynamic'
 
 // Lazy load heavy components for better performance
-const DocumentViewer = dynamic(
-  () => import('@/components/documents/DocumentViewer').then(mod => ({ default: mod.DocumentViewer })),
-  { ssr: false }
-)
-
-const PaywallBanner = dynamic(
-  () => import('@/components/documents/PaywallBanner').then(mod => ({ default: mod.PaywallBanner })),
-  { ssr: false }
-)
-
-const RatingSection = dynamic(
-  () => import('@/components/agents/RatingSection').then(mod => ({ default: mod.RatingSection })),
+const CommentSection = dynamic(
+  () => import('@/components/agents/CommentSection').then(mod => ({ default: mod.CommentSection })),
   {
     ssr: false,
     loading: () => <div className="animate-pulse h-32 bg-muted rounded"></div>
@@ -38,17 +28,36 @@ const DeleteAgentDialog = dynamic(
 
 import { useAgent } from '@/hooks/useAgents'
 import { useIncrementViews } from '@/hooks/useAgents'
-import { trackDownload, createReport } from '@/lib/supabase/mutations'
 import { FavoriteButton } from '@/components/agents/FavoriteButton'
 import { useSession, signIn } from 'next-auth/react'
 import { notFound } from 'next/navigation'
 import Link from 'next/link'
 import Image from 'next/image'
 import { toast } from 'sonner'
-import { canAccessFullDocumentation } from '@/lib/documents/access'
 import { useQuery } from '@tanstack/react-query'
-import { generatePDFFromHTML } from '@/lib/pdf/generatePDF'
-import { useRef } from 'react'
+
+// Helper function to convert color names to hex with opacity
+const getColorStyles = (colorName: string) => {
+  const colorMap: Record<string, string> = {
+    blue: '#3b82f6',
+    green: '#22c55e',
+    purple: '#a855f7',
+    orange: '#f97316',
+    red: '#ef4444',
+    yellow: '#eab308',
+    gray: '#6b7280',
+    pink: '#ec4899',
+    indigo: '#6366f1',
+    teal: '#14b8a6',
+  }
+
+  const hexColor = colorMap[colorName.toLowerCase()] || '#6b7280'
+
+  return {
+    backgroundColor: hexColor + '20', // 20 = ~12% opacity in hex
+    color: hexColor
+  }
+}
 
 export default function AgentDetailPage({
   params,
@@ -67,15 +76,20 @@ export default function AgentDetailPage({
 
   const [shareDialogOpen, setShareDialogOpen] = useState(false)
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false)
-  const [isReporting, setIsReporting] = useState(false)
-  const [isDownloading, setIsDownloading] = useState(false)
-  const documentRef = useRef<HTMLDivElement>(null)
 
   // Fetch agent data
   const { data: agent, isLoading, error } = useAgent(slug, user?.id)
   console.log('Agent query state:', { isLoading, hasError: !!error, hasAgent: !!agent })
   if (agent) {
-    console.log('Agent loaded:', { id: agent.id, slug: agent.slug, name: agent.name })
+    console.log('Agent loaded:', {
+      id: agent.id,
+      slug: agent.slug,
+      name: agent.name,
+      updatedAt: agent.updatedAt,
+      updated_at: (agent as any).updated_at,
+      createdAt: agent.createdAt,
+      created_at: (agent as any).created_at
+    })
   }
   if (error) {
     console.error('Agent query error:', error)
@@ -89,80 +103,9 @@ export default function AgentDetailPage({
     }
   }, [agent?.id, incrementViews])
 
-  // Check if user can access full documentation
-  const { data: canAccessFull = false } = useQuery({
-    queryKey: ['doc-access', agent?.id, user?.id],
-    queryFn: async () => {
-      if (!agent) return false
-      return await canAccessFullDocumentation(agent.id, user?.id || null, {
-        is_premium: agent.is_premium,
-        user_id: agent.user_id,
-      })
-    },
-    enabled: !!agent,
-  })
-
-  // Handle download
-  const handleDownloadDocument = async () => {
-    if (!agent || !documentRef.current) return
-
-    setIsDownloading(true)
-
-    try {
-      // Track download
-      await trackDownload({
-        agent_id: agent.id,
-        user_id: user?.id || null,
-      })
-
-      // Generate PDF from the document content
-      const filename = `${agent.name.replace(/[^a-z0-9]/gi, '_').toLowerCase()}_documentation.pdf`
-
-      await generatePDFFromHTML(documentRef.current, {
-        filename,
-        title: agent.name,
-        author: agent.profile.full_name || agent.profile.username,
-        orientation: 'portrait',
-        margin: 15,
-      })
-
-      toast.success('PDF downloaded successfully!')
-    } catch (error) {
-      console.error('PDF generation error:', error)
-      toast.error('Failed to generate PDF. Please try again.')
-    } finally {
-      setIsDownloading(false)
-    }
-  }
-
   // Handle share dialog
   const handleShare = () => {
     setShareDialogOpen(true)
-  }
-
-  // Handle report
-  const handleReport = async () => {
-    if (!user) {
-      toast.error('Please sign in to report this agent.')
-      return
-    }
-
-    if (!agent) return
-
-    setIsReporting(true)
-    try {
-      await createReport(agent.id, user.id)
-      toast.success('Report submitted. Thank you for reporting. We will review this agent.')
-    } catch (error: any) {
-      // Check if already reported
-      if (error?.code === '23505') {
-        toast.error('You have already reported this agent.')
-      } else {
-        toast.error('Failed to submit report. Please try again.')
-      }
-    } finally {
-      setIsReporting(false)
-    }
   }
 
   if (isLoading) {
@@ -231,69 +174,6 @@ export default function AgentDetailPage({
           </div>
         )}
 
-        {/* Metadata */}
-        <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-6 p-4 bg-muted/50 rounded-lg">
-          {agent.status && (
-            <div>
-              <p className="text-xs text-muted-foreground mb-1">Status</p>
-              <span className={`text-sm font-medium px-2 py-1 rounded inline-block`} style={{ backgroundColor: agent.status.color + '20', color: agent.status.color }}>
-                {agent.status.name}
-              </span>
-            </div>
-          )}
-          {agent.phase && (
-            <div>
-              <p className="text-xs text-muted-foreground mb-1">Phase</p>
-              <span className={`text-sm font-medium px-2 py-1 rounded inline-block`} style={{ backgroundColor: agent.phase.color + '20', color: agent.phase.color }}>
-                {agent.phase.name}
-              </span>
-            </div>
-          )}
-          {agent.benefit && (
-            <div>
-              <p className="text-xs text-muted-foreground mb-1">Benefit Level</p>
-              <span className={`text-sm font-medium px-2 py-1 rounded inline-block`} style={{ backgroundColor: agent.benefit.color + '20', color: agent.benefit.color }}>
-                {agent.benefit.name}
-              </span>
-            </div>
-          )}
-          {agent.opsStatus && (
-            <div>
-              <p className="text-xs text-muted-foreground mb-1">Operational Status</p>
-              <span className={`text-sm font-medium px-2 py-1 rounded inline-block`} style={{ backgroundColor: agent.opsStatus.color + '20', color: agent.opsStatus.color }}>
-                {agent.opsStatus.name}
-              </span>
-            </div>
-          )}
-        </div>
-
-        {/* Additional Information */}
-        {(agent.data || agent.benefitsDesc || agent.link) && (
-          <div className="space-y-4 mb-6 p-4 bg-muted/30 rounded-lg">
-            {agent.benefitsDesc && (
-              <div>
-                <h3 className="text-sm font-semibold mb-2">Benefits</h3>
-                <p className="text-sm text-muted-foreground">{agent.benefitsDesc}</p>
-              </div>
-            )}
-            {agent.data && (
-              <div>
-                <h3 className="text-sm font-semibold mb-2">Additional Data</h3>
-                <p className="text-sm text-muted-foreground whitespace-pre-wrap">{agent.data}</p>
-              </div>
-            )}
-            {agent.link && (
-              <div>
-                <h3 className="text-sm font-semibold mb-2">External Link</h3>
-                <a href={agent.link} target="_blank" rel="noopener noreferrer" className="text-sm text-primary hover:underline inline-flex items-center gap-1">
-                  {agent.link}
-                  <ExternalLink className="h-3 w-3" />
-                </a>
-              </div>
-            )}
-          </div>
-        )}
-
         {/* Stats and Actions */}
         <div className="flex flex-wrap items-center gap-4 pb-6 border-b">
           {/* Author */}
@@ -320,7 +200,7 @@ export default function AgentDetailPage({
           </Link>
 
           <span className="text-sm text-muted-foreground">
-            Updated {new Date(agent.updated_at).toLocaleDateString()}
+            Updated {agent.updatedAt ? new Date(agent.updatedAt).toLocaleDateString() : 'Recently'}
           </span>
 
           {/* Action Buttons */}
@@ -347,18 +227,6 @@ export default function AgentDetailPage({
                 </Button>
               </>
             )}
-            {/* Report button - only show to non-owners */}
-            {(!user || agent.user_id !== user.id) && (
-              <Button
-                variant="ghost"
-                size="default"
-                onClick={handleReport}
-                disabled={isReporting}
-              >
-                <Flag className="h-4 w-4 mr-2" />
-                {isReporting ? 'Reporting...' : 'Report'}
-              </Button>
-            )}
             <Button variant="outline" size="default" onClick={handleShare}>
               <Share2 className="h-4 w-4 mr-2" />
               Share
@@ -371,43 +239,76 @@ export default function AgentDetailPage({
             />
           </div>
         </div>
+
+        {/* Metadata Badges */}
+        {(agent.status || agent.phase || agent.benefit || agent.opsStatus) && (
+          <div className="flex flex-wrap gap-3 pt-6">
+            {agent.status && (
+              <span
+                className="text-sm px-5 py-2.5 rounded-full font-medium"
+                style={getColorStyles(agent.status.color || 'gray')}
+              >
+                {agent.status.name}
+              </span>
+            )}
+            {agent.phase && (
+              <span
+                className="text-sm px-5 py-2.5 rounded-full font-medium"
+                style={getColorStyles(agent.phase.color || 'gray')}
+              >
+                {agent.phase.name}
+              </span>
+            )}
+            {agent.benefit && (
+              <span
+                className="text-sm px-5 py-2.5 rounded-full font-medium"
+                style={getColorStyles(agent.benefit.color || 'gray')}
+              >
+                {agent.benefit.name}
+              </span>
+            )}
+            {agent.opsStatus && (
+              <span
+                className="text-sm px-5 py-2.5 rounded-full font-medium"
+                style={getColorStyles(agent.opsStatus.color || 'gray')}
+              >
+                {agent.opsStatus.name}
+              </span>
+            )}
+          </div>
+        )}
       </div>
 
       {/* Main Content */}
       <div className="space-y-6">
           <Card>
             <CardContent className="pt-6">
-              {/* Download Button */}
-              {(agent.documentation_preview || agent.documentation_full) && (
-                <div className="mb-6 flex justify-end">
-                  <Button
-                    onClick={handleDownloadDocument}
-                    size="default"
-                    variant="outline"
-                    disabled={isDownloading}
-                  >
-                    <Download className="h-4 w-4 mr-2" />
-                    {isDownloading ? 'Generating PDF...' : 'Download PDF'}
-                  </Button>
-                </div>
-              )}
-
-              {/* Document Viewer */}
-              <div ref={documentRef}>
-                {canAccessFull && agent.documentation_full ? (
-                  <DocumentViewer content={agent.documentation_full} />
-                ) : agent.documentation_preview ? (
-                  <>
-                    <DocumentViewer content={agent.documentation_preview} />
-                    {agent.is_premium && (
-                      <PaywallBanner
-                        agentId={agent.id}
-                        agentName={agent.name}
-                        price={agent.price}
-                        currency={agent.currency}
-                      />
+              {/* Agent Information */}
+              <div>
+                {(agent.data || agent.benefitsDesc || agent.link) ? (
+                  <div className="space-y-6">
+                    {agent.benefitsDesc && (
+                      <div>
+                        <h3 className="text-lg font-semibold mb-3">Benefits</h3>
+                        <p className="text-muted-foreground whitespace-pre-wrap">{agent.benefitsDesc}</p>
+                      </div>
                     )}
-                  </>
+                    {agent.data && (
+                      <div>
+                        <h3 className="text-lg font-semibold mb-3">Additional Information</h3>
+                        <p className="text-muted-foreground whitespace-pre-wrap">{agent.data}</p>
+                      </div>
+                    )}
+                    {agent.link && (
+                      <div>
+                        <h3 className="text-lg font-semibold mb-3">External Link</h3>
+                        <a href={agent.link} target="_blank" rel="noopener noreferrer" className="text-primary hover:underline inline-flex items-center gap-1">
+                          {agent.link}
+                          <ExternalLink className="h-4 w-4" />
+                        </a>
+                      </div>
+                    )}
+                  </div>
                 ) : (
                   <div className="p-8 text-center text-gray-500">
                     <p>No documentation available for this agent.</p>
@@ -417,14 +318,12 @@ export default function AgentDetailPage({
             </CardContent>
           </Card>
 
-          {/* Ratings & Reviews */}
+          {/* Comments */}
           <Card>
             <CardContent className="pt-6">
-              <RatingSection
+              <CommentSection
                 agentId={agent.id}
                 userId={user?.id}
-                averageRating={agent.avg_rating}
-                totalRatings={agent.total_ratings}
               />
             </CardContent>
           </Card>

@@ -90,7 +90,6 @@ model Profile {
   user            User         @relation(fields: [id], references: [id], onDelete: Cascade)
   agents          Agent[]
   favorites       Favorite[]
-  downloads       Download[]
   comments        Comment[]
   collections     Collection[]
   following       Follow[]     @relation("UserFollowing")
@@ -246,7 +245,6 @@ model Agent {
 
   // Stats (updated by application logic)
   favoritesCount  Int       @default(0) @map("favorites_count")
-  downloadsCount  Int       @default(0) @map("downloads_count")
   viewsCount      Int       @default(0) @map("views_count")
 
   // Timestamps
@@ -263,7 +261,6 @@ model Agent {
   opsStatus       OpsStatus? @relation(fields: [opsStatusId], references: [id])
   agentTags       AgentTag[]
   favorites       Favorite[]
-  downloads       Download[]
   comments        Comment[]
   collectionAgents CollectionAgent[]
   versions        AgentVersion[]
@@ -276,7 +273,7 @@ model Agent {
   @@index([benefitId])
   @@index([opsStatusId])
   @@index([isPublic, createdAt(sort: Desc)])
-  @@index([isPublic, downloadsCount(sort: Desc)])
+  @@index([isPublic, favoritesCount(sort: Desc)])
   @@map("agents")
 }
 
@@ -331,29 +328,11 @@ model Favorite {
   @@map("favorites")
 }
 
-model Download {
-  id           String   @id @default(cuid()) 
-  userId       String?  @map("user_id") 
-  agentId      String   @map("agent_id") 
-  ipAddress    String?  @map("ip_address") @db.Inet
-  userAgent    String?  @map("user_agent")
-  downloadedAt DateTime @default(now()) @map("downloaded_at") @db.Timestamptz(6)
-  createdAt    DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
-
-  // Relations
-  user         Profile? @relation(fields: [userId], references: [id], onDelete: SetNull)
-  agent        Agent    @relation(fields: [agentId], references: [id], onDelete: Cascade)
-
-  @@index([agentId, downloadedAt(sort: Desc)])
-  @@index([userId, downloadedAt(sort: Desc)])
-  @@map("downloads")
-}
-
 model Comment {
-  id        String    @id @default(cuid()) 
-  userId    String    @map("user_id") 
-  agentId   String    @map("agent_id") 
-  parentId  String?   @map("parent_id") 
+  id        String    @id @default(cuid())
+  userId    String    @map("user_id")
+  agentId   String    @map("agent_id")
+  parentId  String?   @map("parent_id")
   content   String
   isEdited  Boolean   @default(false) @map("is_edited")
   isDeleted Boolean   @default(false) @map("is_deleted")

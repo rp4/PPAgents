@@ -10,6 +10,9 @@ export const prisma =
   globalForPrisma.prisma ||
   new PrismaClient({
     log: process.env.NODE_ENV === 'development' ? ['query', 'error', 'warn'] : ['error'],
+    // Connection pool configuration for production
+    // Note: Connection pooling is configured via DATABASE_URL query parameters
+    // Example: postgresql://user:pass@host:5432/db?connection_limit=10&pool_timeout=5
   });
 
 if (process.env.NODE_ENV !== 'production') globalForPrisma.prisma = prisma;

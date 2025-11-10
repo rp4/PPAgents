@@ -30,6 +30,8 @@ AI Agent Sharing Platform for Auditors - A centralized platform where auditors c
 ### Prerequisites
 - Node.js 18+ installed
 - npm or yarn package manager
+- Supabase account (for database and authentication)
+- Upstash Redis account (for production rate limiting)
 
 ### Installation
 
@@ -44,12 +46,66 @@ cd OpenAuditSwarms
 npm install
 ```
 
-3. Run the development server:
+3. Set up environment variables:
+
+Create a `.env.local` file in the root directory with the following variables:
+
+```bash
+# Database (Supabase)
+NEXT_PUBLIC_SUPABASE_URL=your-supabase-url
+NEXT_PUBLIC_SUPABASE_ANON_KEY=your-supabase-anon-key
+SUPABASE_SERVICE_ROLE_KEY=your-service-role-key
+
+# Authentication (Required)
+NEXTAUTH_SECRET=generate-with-openssl-rand-base64-32
+NEXTAUTH_URL=http://localhost:3000
+
+# SSO Configuration (Choose your provider)
+# Google Workspace
+GOOGLE_CLIENT_ID=your-google-client-id
+GOOGLE_CLIENT_SECRET=your-google-client-secret
+GOOGLE_HD=yourcompany.com
+
+# Azure AD
+AZURE_AD_CLIENT_ID=your-azure-client-id
+AZURE_AD_CLIENT_SECRET=your-azure-client-secret
+AZURE_AD_TENANT_ID=your-tenant-id
+
+# Email Domain Restrictions (Optional but recommended)
+ALLOWED_EMAIL_DOMAINS=yourcompany.com,partner.com
+
+# Rate Limiting (Development uses in-memory, Production requires Upstash)
+UPSTASH_REDIS_REST_URL=your-upstash-url
+UPSTASH_REDIS_REST_TOKEN=your-upstash-token
+
+# Error Tracking (Optional but recommended for production)
+NEXT_PUBLIC_SENTRY_DSN=your-sentry-dsn
+
+# Environment
+NODE_ENV=development
+```
+
+**Generate NEXTAUTH_SECRET:**
+```bash
+openssl rand -base64 32
+```
+
+4. Run database migrations:
+```bash
+npx prisma migrate dev
+```
+
+5. Seed the database (optional):
+```bash
+npx prisma db seed
+```
+
+6. Run the development server:
 ```bash
 npm run dev
 ```
 
-4. Open your browser and navigate to:
+7. Open your browser and navigate to:
 ```
 http://localhost:3000
 ```
@@ -115,27 +171,124 @@ OpenAuditSwarms/
 - Documentation and sample data
 - Prerequisites and setup instructions
 
-### Authentication Pages (`/signin`, `/signup`)
-- Email/password authentication
-- OAuth providers (Google, GitHub)
-- Password strength requirements
-- Terms of service agreement
+### Authentication (`/auth/signin`)
+- SSO via OAuth providers (Google, Azure AD)
+- Automatic account creation on first sign-in
+- Session-based authentication with NextAuth.js
 
-### Dashboard (`/dashboard`)
-- Agent performance metrics
-- Manage uploaded agents
-- Favorite agents collection
-- Analytics and insights
-- Profile settings
+## Production Deployment
 
-## Next Steps
+### Pre-Deployment Checklist
 
-### Backend Implementation
-1. Set up Supabase project
-2. Create database schema with RLS policies
-3. Implement authentication flow
-4. Add API endpoints for CRUD operations
-5. Set up real-time subscriptions
+Before deploying to production, ensure you have:
+
+#### 1. Environment Variables Configured
+
+**Required:**
+- ✅ `NEXTAUTH_SECRET` - Generate with: `openssl rand -base64 32`
+- ✅ `NEXTAUTH_URL` - Your production domain (e.g., `https://yourdomain.com`)
+- ✅ `NEXT_PUBLIC_SUPABASE_URL` - Your Supabase project URL
+- ✅ `NEXT_PUBLIC_SUPABASE_ANON_KEY` - Supabase anon key
+- ✅ `SUPABASE_SERVICE_ROLE_KEY` - Supabase service role key (server-side only)
+
+**SSO Configuration (at least one):**
+- ✅ Google Workspace: `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET`, `GOOGLE_HD`
+- ✅ Azure AD: `AZURE_AD_CLIENT_ID`, `AZURE_AD_CLIENT_SECRET`, `AZURE_AD_TENANT_ID`
+
+**Rate Limiting (Required for Production):**
+- ✅ `UPSTASH_REDIS_REST_URL` - Upstash Redis URL
+- ✅ `UPSTASH_REDIS_REST_TOKEN` - Upstash Redis token
+
+> ⚠️ **Warning**: Without Upstash Redis configured, the app will use in-memory rate limiting, which won't work properly in serverless/distributed environments.
+
+**Security (Recommended):**
+- ✅ `ALLOWED_EMAIL_DOMAINS` - Comma-separated list of allowed email domains
+- ✅ `NEXT_PUBLIC_SENTRY_DSN` - Sentry DSN for error tracking
+
+#### 2. Security Configuration
+
+1. **Upstash Redis Setup** (Required):
+   ```bash
+   # Sign up at https://console.upstash.com
+   # Create a new Redis database
+   # Copy the REST URL and Token to your environment variables
+   ```
+
+2. **Email Domain Restrictions** (Recommended):
+   ```bash
+   ALLOWED_EMAIL_DOMAINS=yourcompany.com,partner.com
+   ```
+   This ensures only users from your organization can sign in.
+
+3. **Verify Security Headers**:
+   - Visit https://securityheaders.com after deployment
+   - Ensure all headers are properly configured
+
+#### 3. Database Migration
+
+```bash
+# Deploy migrations to production database
+npx prisma migrate deploy
+```
+
+#### 4. Frontend CSRF Integration
+
+The backend now requires CSRF tokens for all POST/PUT/PATCH/DELETE requests. Ensure your frontend includes CSRF tokens:
+
+```typescript
+// Example: Include CSRF token in fetch requests
+const csrfToken = document.cookie
+  .split('; ')
+  .find(row => row.startsWith('__Host-csrf-token='))
+  ?.split('=')[1];
+
+fetch('/api/agents', {
+  method: 'POST',
+  headers: {
+    'Content-Type': 'application/json',
+    'x-csrf-token': csrfToken || '',
+  },
+  body: JSON.stringify(data),
+});
+```
+
+#### 5. Testing
+
+- [ ] Run `npm audit` and fix any vulnerabilities
+- [ ] Run `npx tsc --noEmit` to check for type errors
+- [ ] Test authentication flow end-to-end
+- [ ] Verify CSRF protection is working
+- [ ] Test rate limiting by exceeding limits
+- [ ] Verify session expiration after 7 days
+
+#### 6. Monitoring & Alerts
+
+- [ ] Set up Sentry for error tracking
+- [ ] Configure security monitoring for failed auth attempts
+- [ ] Set up alerts for rate limit violations
+- [ ] Monitor CSRF token validation failures
+
+### Deployment Commands
+
+```bash
+# Build for production
+npm run build
+
+# Preview production build locally
+npm run preview
+
+# Deploy (platform-specific)
+# Vercel: vercel --prod
+# Cloud Run: npm run deploy
+```
+
+### Security Documentation
+
+For detailed security information, see:
+- **[SECURITY.md](./SECURITY.md)** - Complete security guide and best practices
+- **[SECURITY_CHANGES.md](./SECURITY_CHANGES.md)** - Recent security improvements
+
+### Next Steps
 
 ### Additional Features
 - Comment system on agents

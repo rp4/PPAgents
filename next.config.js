@@ -2,6 +2,14 @@
 const nextConfig = {
   reactStrictMode: true,
 
+  // Disable standalone for simpler deployment
+  // output: 'standalone',
+
+  // Disable static page generation for now to avoid build issues
+  experimental: {
+    isrMemoryCacheSize: 0,
+  },
+
   // Disable ESLint during build (known Next.js 15.5.6 bug with circular structure)
   eslint: {
     ignoreDuringBuilds: true,

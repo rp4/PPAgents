@@ -140,10 +140,7 @@ export interface Database {
           benefit: string | null
           tags: string[] | null
           favorites_count: number
-          downloads_count: number
           views_count: number
-          avg_rating: number
-          total_ratings: number
           created_at: string
           updated_at: string
           published_at: string | null
@@ -178,10 +175,7 @@ export interface Database {
           benefit?: string | null
           tags?: string[] | null
           favorites_count?: number
-          downloads_count?: number
           views_count?: number
-          avg_rating?: number
-          total_ratings?: number
           created_at?: string
           updated_at?: string
           published_at?: string | null
@@ -216,10 +210,7 @@ export interface Database {
           benefit?: string | null
           tags?: string[] | null
           favorites_count?: number
-          downloads_count?: number
           views_count?: number
-          avg_rating?: number
-          total_ratings?: number
           created_at?: string
           updated_at?: string
           published_at?: string | null
@@ -259,64 +250,6 @@ export interface Database {
           id?: string
           user_id?: string
           agent_id?: string
-          created_at?: string
-        }
-      }
-      ratings: {
-        Row: {
-          id: string
-          user_id: string
-          agent_id: string
-          score: number
-          review: string | null
-          is_verified_purchase: boolean
-          created_at: string
-          updated_at: string
-        }
-        Insert: {
-          id?: string
-          user_id: string
-          agent_id: string
-          score: number
-          review?: string | null
-          is_verified_purchase?: boolean
-          created_at?: string
-          updated_at?: string
-        }
-        Update: {
-          id?: string
-          user_id?: string
-          agent_id?: string
-          score?: number
-          review?: string | null
-          is_verified_purchase?: boolean
-          created_at?: string
-          updated_at?: string
-        }
-      }
-      downloads: {
-        Row: {
-          id: string
-          user_id: string | null
-          agent_id: string
-          ip_address: string | null
-          user_agent: string | null
-          created_at: string
-        }
-        Insert: {
-          id?: string
-          user_id?: string | null
-          agent_id: string
-          ip_address?: string | null
-          user_agent?: string | null
-          created_at?: string
-        }
-        Update: {
-          id?: string
-          user_id?: string | null
-          agent_id?: string
-          ip_address?: string | null
-          user_agent?: string | null
           created_at?: string
         }
       }
@@ -502,10 +435,6 @@ export interface Database {
         Args: { p_agent_id: string; p_user_id: string }
         Returns: boolean
       }
-      get_user_rating: {
-        Args: { p_agent_id: string; p_user_id: string }
-        Returns: number | null
-      }
     }
     Enums: Record<string, never>
   }
@@ -518,8 +447,6 @@ export type Platform = Database['public']['Tables']['platforms']['Row']
 export type Agent = Database['public']['Tables']['agents']['Row']
 export type AgentPlatform = Database['public']['Tables']['agent_platforms']['Row']
 export type Favorite = Database['public']['Tables']['favorites']['Row']
-export type Rating = Database['public']['Tables']['ratings']['Row']
-export type Download = Database['public']['Tables']['downloads']['Row']
 export type Comment = Database['public']['Tables']['comments']['Row']
 export type Collection = Database['public']['Tables']['collections']['Row']
 export type CollectionAgent = Database['public']['Tables']['collection_agents']['Row']
@@ -531,14 +458,11 @@ export type AgentVersion = Database['public']['Tables']['agent_versions']['Row']
 export type ProfileInsert = Database['public']['Tables']['profiles']['Insert']
 export type AgentInsert = Database['public']['Tables']['agents']['Insert']
 export type FavoriteInsert = Database['public']['Tables']['favorites']['Insert']
-export type RatingInsert = Database['public']['Tables']['ratings']['Insert']
 export type CommentInsert = Database['public']['Tables']['comments']['Insert']
-export type DownloadInsert = Database['public']['Tables']['downloads']['Insert']
 
 // Update types
 export type ProfileUpdate = Database['public']['Tables']['profiles']['Update']
 export type AgentUpdate = Database['public']['Tables']['agents']['Update']
-export type RatingUpdate = Database['public']['Tables']['ratings']['Update']
 export type CommentUpdate = Database['public']['Tables']['comments']['Update']
 
 // Extended types with relations
@@ -546,15 +470,11 @@ export type AgentWithRelations = Agent & {
   profile: Profile
   category: Category | null
   agent_platforms: (AgentPlatform & { platform: Platform })[]
+  agentTags?: any[]
   user_favorited?: boolean
-  user_rating?: number | null
 }
 
 export type CommentWithProfile = Comment & {
   profile: Profile
   replies?: CommentWithProfile[]
-}
-
-export type RatingWithProfile = Rating & {
-  profile: Profile
 }

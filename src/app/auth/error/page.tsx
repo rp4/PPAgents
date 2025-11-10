@@ -1,11 +1,14 @@
 'use client';
 
+import { Suspense } from 'react';
 import { useSearchParams } from 'next/navigation';
 import Link from 'next/link';
 import { Card } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 
-export default function AuthErrorPage() {
+export const dynamic = 'force-dynamic';
+
+function AuthErrorContent() {
   const searchParams = useSearchParams();
   const error = searchParams?.get('error');
 
@@ -122,5 +125,13 @@ export default function AuthErrorPage() {
         </div>
       </Card>
     </div>
+  );
+}
+
+export default function AuthErrorPage() {
+  return (
+    <Suspense fallback={<div className="min-h-screen flex items-center justify-center">Loading...</div>}>
+      <AuthErrorContent />
+    </Suspense>
   );
 }

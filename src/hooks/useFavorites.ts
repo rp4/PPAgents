@@ -1,13 +1,34 @@
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
-import {
-  getUserFavorites,
-  checkUserFavorited,
-} from '@/lib/supabase/queries'
-import {
-  toggleFavorite,
-  addFavorite,
-  removeFavorite,
-} from '@/lib/supabase/mutations'
+
+// API client functions
+async function getUserFavorites(userId: string, limit = 20, offset = 0) {
+  const response = await fetch(`/api/users/${userId}/favorites?limit=${limit}&offset=${offset}`)
+  if (!response.ok) throw new Error('Failed to fetch favorites')
+  return response.json()
+}
+
+async function checkUserFavorited(agentId: string, userId: string) {
+  const response = await fetch(`/api/agents/${agentId}/favorite`)
+  if (!response.ok) return false
+  const data = await response.json()
+  return data.favorited
+}
+
+async function toggleFavorite(agentId: string, userId: string) {
+  const response = await fetch(`/api/agents/${agentId}/favorite`, {
+    method: 'POST',
+  })
+  if (!response.ok) throw new Error('Failed to toggle favorite')
+  return response.json()
+}
+
+async function addFavorite(agentId: string, userId: string) {
+  return toggleFavorite(agentId, userId)
+}
+
+async function removeFavorite(agentId: string, userId: string) {
+  return toggleFavorite(agentId, userId)
+}
 
 // ============================================
 // QUERY HOOKS

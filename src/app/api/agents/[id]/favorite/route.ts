@@ -1,28 +1,24 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { getServerSession } from 'next-auth/next';
-import { authOptions } from '@/lib/auth/config';
+import { requireAuth } from '@/lib/api/auth-helpers';
+import { handleApiError } from '@/lib/api/error-handler';
 import { toggleFavorite } from '@/lib/db/agents';
 
-interface RouteContext {
-  params: {
-    id: string;
-  };
-}
-
 // POST /api/agents/[id]/favorite - Toggle favorite
-export async function POST(request: NextRequest, { params }: RouteContext) {
-  try {
-    const session = await getServerSession(authOptions);
+export async function POST(
+  request: NextRequest,
+  { params }: { params: Promise<{ id: string }> }
+) {
+  const { id } = await params;
 
-    if (!session?.user?.id) {
-      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+  return requireAuth(request, { params }, async (req, ctx, session) => {
+    try {
+      const result = await toggleFavorite(session.user.id, id);
+      return NextResponse.json(result);
+    } catch (error) {
+      return handleApiError(error, {
+        action: 'toggle_favorite',
+        logContext: { agentId: id, userId: session.user.id },
+      });
     }
-
-    const result = await toggleFavorite(session.user.id, params.id);
-
-    return NextResponse.json(result);
-  } catch (error) {
-    console.error('Error toggling favorite:', error);
-    return NextResponse.json({ error: 'Failed to toggle favorite' }, { status: 500 });
-  }
+  });
 }

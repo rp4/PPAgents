@@ -33,3 +33,17 @@ jest.mock('@sentry/nextjs', () => ({
   captureMessage: jest.fn(),
   init: jest.fn(),
 }))
+
+// Polyfill for Next.js server APIs
+if (typeof Request === 'undefined') {
+  global.Request = class Request {}
+}
+if (typeof Response === 'undefined') {
+  global.Response = class Response {}
+}
+if (typeof Headers === 'undefined') {
+  global.Headers = class Headers {}
+}
+if (typeof fetch === 'undefined') {
+  global.fetch = jest.fn()
+}

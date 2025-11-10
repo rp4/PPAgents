@@ -1,5 +1,5 @@
 import { NextResponse } from 'next/server'
-import { createClient } from '@supabase/supabase-js'
+import { prisma } from '@/lib/db/client'
 
 /**
  * Health check endpoint
@@ -10,10 +10,9 @@ export async function GET() {
 
   try {
     // Check environment variables
-    const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL
-    const supabaseKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY
+    const databaseUrl = process.env.DATABASE_URL
 
-    if (!supabaseUrl || !supabaseKey) {
+    if (!databaseUrl) {
       return NextResponse.json(
         {
           status: 'unhealthy',
@@ -22,39 +21,16 @@ export async function GET() {
             environment: 'failed',
             database: 'skipped',
           },
-          error: 'Missing environment configuration',
+          error: 'Missing DATABASE_URL configuration',
         },
         { status: 503 }
       )
     }
 
-    // Check database connection
-    const supabase = createClient(supabaseUrl, supabaseKey)
-
-    const { data, error } = await supabase
-      .from('agents')
-      .select('id')
-      .limit(1)
-      .single()
+    // Check database connection with a simple query
+    await prisma.$queryRaw`SELECT 1`
 
     const responseTime = Date.now() - startTime
-
-    if (error && error.code !== 'PGRST116') {
-      // PGRST116 is "no rows returned" which is fine for health check
-      return NextResponse.json(
-        {
-          status: 'unhealthy',
-          timestamp: new Date().toISOString(),
-          responseTime: `${responseTime}ms`,
-          checks: {
-            environment: 'ok',
-            database: 'failed',
-          },
-          error: error.message,
-        },
-        { status: 503 }
-      )
-    }
 
     // All checks passed
     return NextResponse.json({
@@ -78,7 +54,7 @@ export async function GET() {
         responseTime: `${responseTime}ms`,
         checks: {
           environment: 'unknown',
-          database: 'unknown',
+          database: 'failed',
         },
         error: error instanceof Error ? error.message : 'Unknown error',
       },

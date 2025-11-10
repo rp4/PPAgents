@@ -3,6 +3,8 @@ import { getServerSession } from 'next-auth/next';
 import { authOptions } from '@/lib/auth/config';
 import { getAgentBySlug, updateAgent, deleteAgent } from '@/lib/db/agents';
 import { z } from 'zod';
+import { sanitizeMarkdown, sanitizePlainText } from '@/lib/security/sanitize';
+import { logUserAction, logError } from '@/lib/security/logger';
 
 interface RouteContext {
   params: Promise<{
@@ -14,32 +16,16 @@ interface RouteContext {
 export async function GET(request: NextRequest, { params }: RouteContext) {
   try {
     const { id } = await params;
-    console.log('=== [API] GET /api/agents/[id] START ===');
-    console.log('[API] GET /api/agents/[id] - Slug/ID:', id);
-    console.log('[API] GET /api/agents/[id] - Request URL:', request.url);
-
     const session = await getServerSession(authOptions);
-    console.log('[API] Session exists:', !!session);
-    console.log('[API] Session user ID:', session?.user?.id);
-    console.log('[API] Session user email:', session?.user?.email);
-
-    console.log('[API] Calling getAgentBySlug...');
     const agent = await getAgentBySlug(id, session?.user?.id);
-    console.log('[API] getAgentBySlug returned:', agent ? `Agent object (id: ${agent.id}, slug: ${agent.slug}, name: ${agent.name})` : 'null');
 
     if (!agent) {
-      console.log('[API] ⚠️ RETURNING 404 - Agent not found or access denied');
-      console.log('=== [API] GET /api/agents/[id] END (404) ===');
       return NextResponse.json({ error: 'Agent not found' }, { status: 404 });
     }
 
-    console.log('[API] ✅ RETURNING 200 - Agent found successfully');
-    console.log('=== [API] GET /api/agents/[id] END (200) ===');
     return NextResponse.json(agent);
   } catch (error) {
-    console.error('[API] ❌ ERROR in GET /api/agents/[id]:', error);
-    console.error('[API] Error stack:', error instanceof Error ? error.stack : 'No stack trace');
-    console.log('=== [API] GET /api/agents/[id] END (500) ===');
+    logError(error, { action: 'get_agent', agentId: (await params).id });
     return NextResponse.json({ error: 'Failed to fetch agent' }, { status: 500 });
   }
 }
@@ -60,24 +46,47 @@ export async function PATCH(request: NextRequest, { params }: RouteContext) {
     const schema = z.object({
       name: z.string().min(3).max(100).optional(),
       description: z.string().min(10).max(1000).optional(),
-      categoryId: z.string().uuid().optional(),
-      statusId: z.string().uuid().optional(),
-      tagIds: z.array(z.string().uuid()).optional(),
+      categoryId: z.string().cuid().optional(),
+      statusId: z.string().cuid().optional(),
+      phaseId: z.string().cuid().optional(),
+      benefitId: z.string().cuid().optional(),
+      opsStatusId: z.string().cuid().optional(),
+      tagIds: z.array(z.string().cuid()).optional(),
       instructions: z.object({}).passthrough().optional(),
       configuration: z.object({}).passthrough().optional(),
-      markdownContent: z.string().optional(),
+      markdownContent: z.string().max(50000).optional(),
+      data: z.string().max(100000).optional(),
+      benefitsDesc: z.string().max(10000).optional(),
       isPublic: z.boolean().optional(),
     });
 
     const validatedData = schema.parse(body);
 
-    const agent = await updateAgent(id, session.user.id, validatedData);
+    // Sanitize user-generated content
+    const sanitizedData = {
+      ...validatedData,
+      name: validatedData.name ? sanitizePlainText(validatedData.name) : undefined,
+      description: validatedData.description
+        ? sanitizePlainText(validatedData.description)
+        : undefined,
+      markdownContent: validatedData.markdownContent
+        ? sanitizeMarkdown(validatedData.markdownContent)
+        : undefined,
+      data: validatedData.data ? sanitizeMarkdown(validatedData.data) : undefined,
+      benefitsDesc: validatedData.benefitsDesc
+        ? sanitizeMarkdown(validatedData.benefitsDesc)
+        : undefined,
+    };
+
+    const agent = await updateAgent(id, session.user.id, sanitizedData);
+
+    logUserAction(session.user.id, 'update_agent', { agentId: id });
 
     return NextResponse.json(agent);
   } catch (error) {
     if (error instanceof z.ZodError) {
       return NextResponse.json(
-        { error: 'Validation error', details: error.errors },
+        { error: 'Validation error', details: error.issues },
         { status: 400 }
       );
     }
@@ -86,7 +95,7 @@ export async function PATCH(request: NextRequest, { params }: RouteContext) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 403 });
     }
 
-    console.error('Error updating agent:', error);
+    logError(error, { action: 'update_agent', agentId: (await params).id });
     return NextResponse.json({ error: 'Failed to update agent' }, { status: 500 });
   }
 }
@@ -103,13 +112,15 @@ export async function DELETE(request: NextRequest, { params }: RouteContext) {
 
     await deleteAgent(id, session.user.id);
 
+    logUserAction(session.user.id, 'delete_agent', { agentId: id });
+
     return NextResponse.json({ success: true });
   } catch (error) {
     if (error instanceof Error && error.message === 'Unauthorized') {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 403 });
     }
 
-    console.error('Error deleting agent:', error);
+    logError(error, { action: 'delete_agent', agentId: (await params).id });
     return NextResponse.json({ error: 'Failed to delete agent' }, { status: 500 });
   }
 }

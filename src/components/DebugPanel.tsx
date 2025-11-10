@@ -1,9 +1,7 @@
 'use client'
 
 import { useAgents } from '@/hooks/useAgents'
-import { useEffect, useState } from 'react'
-import { getPlatforms } from '@/lib/supabase/queries'
-import type { Platform } from '@/types/database'
+import { useEffect } from 'react'
 
 /**
  * Debug panel to show what's happening with data fetching
@@ -11,21 +9,6 @@ import type { Platform } from '@/types/database'
  */
 export function DebugPanel() {
   const { data: agents, isLoading, error, dataUpdatedAt } = useAgents({ limit: 20 })
-  const [platforms, setPlatforms] = useState<Platform[]>([])
-  const [platformsError, setPlatformsError] = useState<Error | null>(null)
-
-  useEffect(() => {
-    console.log('🐛 DebugPanel: Fetching platforms...')
-    getPlatforms()
-      .then((data) => {
-        console.log('🐛 DebugPanel: Platforms loaded:', data.length)
-        setPlatforms(data)
-      })
-      .catch((err) => {
-        console.error('🐛 DebugPanel: Platforms error:', err)
-        setPlatformsError(err)
-      })
-  }, [])
 
   useEffect(() => {
     console.log('🐛 DebugPanel: Agents state changed:', {
@@ -41,15 +24,6 @@ export function DebugPanel() {
       <div className="font-bold mb-2 text-yellow-400">🐛 DEBUG PANEL</div>
 
       <div className="space-y-2">
-        <div>
-          <strong>Platforms:</strong>{' '}
-          {platformsError ? (
-            <span className="text-red-400">Error: {platformsError.message}</span>
-          ) : (
-            <span className="text-green-400">{platforms.length} loaded</span>
-          )}
-        </div>
-
         <div>
           <strong>Agents Query:</strong>{' '}
           {isLoading ? (
@@ -82,12 +56,6 @@ export function DebugPanel() {
               <br />• Public: {agents[0].is_public ? 'Yes' : 'No'}
               <br />• Platforms: {agents[0].agent_platforms?.length || 0}
             </div>
-          </div>
-        )}
-
-        {platforms.length > 0 && (
-          <div className="mt-2 text-xs text-gray-300">
-            <strong>Platforms:</strong> {platforms.map(p => p.name).join(', ')}
           </div>
         )}
       </div>

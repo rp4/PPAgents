@@ -6,8 +6,32 @@ import { useSession, signOut } from "next-auth/react"
 import Image from "next/image"
 import Link from "next/link"
 import { useQuery } from "@tanstack/react-query"
-import { getUserProfile, getUserAgents, getUserFavorites } from "@/lib/supabase/queries"
 import { Button } from "@/components/ui/button"
+
+// API functions
+const getUserProfile = async (username: string) => {
+  const res = await fetch(`/api/profiles/${username}`, {
+    cache: 'no-store',
+  });
+  if (!res.ok) return null;
+  return res.json();
+};
+
+const getUserAgents = async (username: string) => {
+  const res = await fetch(`/api/profiles/${username}/agents`, {
+    cache: 'no-store',
+  });
+  if (!res.ok) return [];
+  return res.json();
+};
+
+const getUserFavorites = async (username: string) => {
+  const res = await fetch(`/api/profiles/${username}/favorites`, {
+    cache: 'no-store',
+  });
+  if (!res.ok) return [];
+  return res.json();
+};
 import { AgentCard } from "@/components/agents/AgentCard"
 import { LogOut, Upload as UploadIcon, Heart, Edit } from "lucide-react"
 import { useState } from "react"
@@ -25,19 +49,21 @@ export default function ProfilePage({ params }: { params: Promise<{ username: st
     enabled: !!username,
   })
 
+  // Check if this is the user's own profile
+  const isOwnProfile = session?.user?.id === profile?.id
+
   // Fetch user's created agents
   const { data: createdAgents = [], isLoading: loadingAgents } = useQuery({
-    queryKey: ['user-agents', profile?.id],
-    queryFn: () => getUserAgents(profile!.id),
-    enabled: !!profile?.id,
+    queryKey: ['user-agents', username],
+    queryFn: () => getUserAgents(username),
+    enabled: !!username && !!profile,
   })
 
   // Fetch user's favorites (only for own profile)
-  const isOwnProfile = session?.user?.id === profile?.id
   const { data: favoritedAgents = [], isLoading: loadingFavorites } = useQuery({
-    queryKey: ['user-favorites', profile?.id],
-    queryFn: () => getUserFavorites(profile!.id),
-    enabled: !!profile?.id && isOwnProfile,
+    queryKey: ['user-favorites', username],
+    queryFn: () => getUserFavorites(username),
+    enabled: !!username && !!profile && isOwnProfile,
   })
 
   const handleSignOut = async () => {
@@ -85,19 +111,16 @@ export default function ProfilePage({ params }: { params: Promise<{ username: st
         <div className="flex flex-col md:flex-row items-start md:items-center gap-6">
           {/* Avatar */}
           <div className="flex-shrink-0">
-            {profile.avatar_url ? (
-              <Image
-                src={profile.avatar_url}
-                alt={profile.full_name || profile.username || 'User'}
-                width={120}
-                height={120}
-                className="rounded-full border-4 border-blue-200 object-cover"
-              />
-            ) : (
-              <div className="w-30 h-30 rounded-full bg-gradient-to-br from-blue-500 to-blue-500 flex items-center justify-center text-white text-4xl font-bold border-4 border-blue-200">
-                {(profile.username || profile.full_name || 'U').charAt(0).toUpperCase()}
-              </div>
-            )}
+            <div className="w-30 h-30 rounded-full bg-gradient-to-br from-blue-500 to-purple-600 flex items-center justify-center text-white text-4xl font-bold border-4 border-blue-200">
+              {(() => {
+                const name = profile.full_name || profile.username || 'User';
+                const parts = name.split(' ');
+                if (parts.length >= 2) {
+                  return (parts[0].charAt(0) + parts[1].charAt(0)).toUpperCase();
+                }
+                return name.charAt(0).toUpperCase();
+              })()}
+            </div>
           </div>
 
           {/* Profile Info */}
@@ -248,7 +271,7 @@ export default function ProfilePage({ params }: { params: Promise<{ username: st
         </div>
       ) : (
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-          {agents.map((agent) => (
+          {agents.map((agent: any) => (
             <AgentCard key={agent.id} agent={agent} />
           ))}
         </div>

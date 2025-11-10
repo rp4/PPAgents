@@ -11,6 +11,16 @@ const isRedisConfigured =
   process.env.UPSTASH_REDIS_REST_URL &&
   process.env.UPSTASH_REDIS_REST_TOKEN
 
+// Warn if Redis is not configured in production (optional for small deployments)
+if (process.env.NODE_ENV === 'production' && !isRedisConfigured) {
+  console.warn(
+    '⚠️  PRODUCTION WARNING: Upstash Redis not configured. Rate limiting will use in-memory fallback.\n' +
+    'This is acceptable for small internal deployments (<100 users) but may not work correctly in serverless environments.\n' +
+    'For larger deployments, configure UPSTASH_REDIS_REST_URL and UPSTASH_REDIS_REST_TOKEN.\n' +
+    'Get credentials from https://console.upstash.com'
+  );
+}
+
 // Initialize Redis client for production
 const redis = isRedisConfigured
   ? new Redis({
@@ -187,9 +197,11 @@ export async function checkRateLimit(
   }
 
   // Fall back to in-memory limiter (development only)
-  console.warn(
-    '⚠️  Using in-memory rate limiter. Configure Upstash Redis for production!'
-  )
+  if (process.env.NODE_ENV === 'development') {
+    console.warn(
+      '⚠️  Using in-memory rate limiter. Configure Upstash Redis for production!'
+    );
+  }
   return fallbackLimiter.limit(
     identifier,
     config.maxRequests,

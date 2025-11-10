@@ -4,9 +4,7 @@ describe('Agent Validation', () => {
   const validAgentData = {
     name: 'Test Agent',
     description: 'A valid test agent description that is at least ten characters long',
-    platforms: ['550e8400-e29b-41d4-a716-446655440000'], // Valid UUID
-    category_id: '550e8400-e29b-41d4-a716-446655440001', // Valid UUID
-    tags: ['test', 'agent'],
+    category_id: 'cld1234567890abcdefgh', // Valid CUID
     is_public: true,
   }
 
@@ -121,51 +119,10 @@ describe('Agent Validation', () => {
       expect(result.success).toBe(false)
     })
 
-    it('should reject empty platforms array', () => {
-      const result = createAgentSchema.safeParse({
-        ...validAgentData,
-        platforms: [],
-      })
-
-      expect(result.success).toBe(false)
-    })
-
     it('should accept valid agent data', () => {
       const result = createAgentSchema.safeParse(validAgentData)
 
       expect(result.success).toBe(true)
-    })
-  })
-
-  describe('Tag Validation', () => {
-    it('should accept valid tags array', () => {
-      const result = createAgentSchema.safeParse({
-        ...validAgentData,
-        tags: ['ai', 'automation', 'testing'],
-      })
-
-      expect(result.success).toBe(true)
-    })
-
-    it('should handle empty tags array', () => {
-      const result = createAgentSchema.safeParse({
-        ...validAgentData,
-        tags: [],
-      })
-
-      expect(result.success).toBe(true)
-    })
-
-    it('should sanitize XSS in tags', () => {
-      const result = createAgentSchema.safeParse({
-        ...validAgentData,
-        tags: ['<script>alert("xss")</script>', 'valid-tag'],
-      })
-
-      expect(result.success).toBe(true)
-      if (result.success) {
-        expect(result.data.tags[0]).not.toContain('<script>')
-      }
     })
   })
 })

@@ -16,36 +16,12 @@ function sanitizeHtml(value: unknown): string {
   })
 }
 
-/**
- * Sanitize JSON configuration objects to prevent script injection
- */
-function sanitizeJson(value: unknown): unknown {
-  if (value === null || value === undefined) return value
-  if (typeof value === 'string') {
-    // Check for script tags or dangerous content
-    if (/<script|javascript:|on\w+=/i.test(value)) {
-      return value.replace(/<script.*?<\/script>/gi, '').replace(/on\w+=/gi, '')
-    }
-    return value
-  }
-  if (typeof value === 'object') {
-    if (Array.isArray(value)) {
-      return value.map(sanitizeJson)
-    }
-    const sanitized: Record<string, unknown> = {}
-    for (const [key, val] of Object.entries(value)) {
-      sanitized[key] = sanitizeJson(val)
-    }
-    return sanitized
-  }
-  return value
-}
-
 // ============================================
 // AGENT SCHEMAS
 // ============================================
 
 export const createAgentSchema = z.object({
+  // Required fields
   name: z.string()
     .min(3, 'Name must be at least 3 characters')
     .max(100, 'Name must be less than 100 characters')
@@ -56,10 +32,7 @@ export const createAgentSchema = z.object({
     .max(500, 'Description must be less than 500 characters')
     .transform(sanitizeHtml),
 
-  category_id: z.string()
-    .uuid('Invalid category')
-    .optional(),
-
+  // Optional dropdown fields (IDs) - transform empty strings to undefined
   status_id: z.string()
     .transform(val => val === '' ? undefined : val)
     .optional(),
@@ -76,60 +49,7 @@ export const createAgentSchema = z.object({
     .transform(val => val === '' ? undefined : val)
     .optional(),
 
-  platforms: z.array(z.string().uuid())
-    .optional()
-    .default([]),
-
-  tags: z.array(z.string())
-    .max(10, 'Maximum 10 tags')
-    .default([])
-    .transform(tags => tags.map(tag => DOMPurify.sanitize(tag, { ALLOWED_TAGS: [] }))),
-
-  prerequisites: z.array(z.string())
-    .default([])
-    .transform(prereqs => prereqs.map(p => sanitizeHtml(p))),
-
-  estimated_tokens: z.number()
-    .int()
-    .positive()
-    .optional(),
-
-  estimated_cost: z.number()
-    .positive()
-    .optional(),
-
-  is_public: z.boolean()
-    .optional(),
-
-  instructions: z.string()
-    .max(10000, 'Instructions too long')
-    .optional()
-    .transform(val => val ? sanitizeHtml(val) : undefined),
-
-  configuration: z.record(z.string(), z.unknown())
-    .optional()
-    .transform(val => val ? sanitizeJson(val) as Record<string, unknown> : undefined),
-
-  sample_inputs: z.array(z.string())
-    .max(10, 'Maximum 10 sample inputs')
-    .default([])
-    .transform(inputs => inputs.map(i => sanitizeHtml(i))),
-
-  sample_outputs: z.array(z.string())
-    .max(10, 'Maximum 10 sample outputs')
-    .default([])
-    .transform(outputs => outputs.map(o => sanitizeHtml(o))),
-
-  phase: z.string()
-    .max(100, 'Phase must be less than 100 characters')
-    .optional()
-    .transform(val => val ? DOMPurify.sanitize(val, { ALLOWED_TAGS: [] }) : undefined),
-
-  benefit: z.string()
-    .max(500, 'Benefit must be less than 500 characters')
-    .optional()
-    .transform(val => val ? sanitizeHtml(val) : undefined),
-
+  // Optional free-form text fields
   data: z.string()
     .max(10000, 'Data must be less than 10000 characters')
     .optional()
@@ -145,6 +65,11 @@ export const createAgentSchema = z.object({
     .max(500, 'Link must be less than 500 characters')
     .optional()
     .or(z.literal('')),
+
+  // Public visibility
+  is_public: z.boolean()
+    .optional()
+    .default(true),
 })
 
 export const updateAgentSchema = createAgentSchema.partial()
@@ -158,34 +83,16 @@ export type UpdateAgentInput = z.input<typeof updateAgentSchema>
 export type UpdateAgentOutput = z.output<typeof updateAgentSchema>
 
 // ============================================
-// RATING SCHEMAS
-// ============================================
-
-export const createRatingSchema = z.object({
-  agent_id: z.string().uuid(),
-  score: z.number()
-    .int()
-    .min(1, 'Rating must be at least 1')
-    .max(5, 'Rating must be at most 5'),
-  review: z.string()
-    .max(1000, 'Review must be less than 1000 characters')
-    .optional()
-    .transform(val => val ? sanitizeHtml(val) : val),
-})
-
-export type CreateRatingInput = z.infer<typeof createRatingSchema>
-
-// ============================================
 // COMMENT SCHEMAS
 // ============================================
 
 export const createCommentSchema = z.object({
-  agent_id: z.string().uuid(),
+  agent_id: z.string().cuid(),
   content: z.string()
     .min(1, 'Comment cannot be empty')
     .max(2000, 'Comment must be less than 2000 characters')
     .transform(sanitizeHtml),
-  parent_id: z.string().uuid().optional(),
+  parent_id: z.string().cuid().optional(),
 })
 
 export const updateCommentSchema = z.object({
@@ -197,6 +104,24 @@ export const updateCommentSchema = z.object({
 
 export type CreateCommentInput = z.infer<typeof createCommentSchema>
 export type UpdateCommentInput = z.infer<typeof updateCommentSchema>
+
+// ============================================
+// RATING SCHEMAS (for rating system)
+// ============================================
+
+export const createRatingSchema = z.object({
+  agent_id: z.string().cuid(),
+  score: z.number()
+    .int()
+    .min(1, 'Rating must be at least 1')
+    .max(5, 'Rating must be at most 5'),
+  review: z.string()
+    .max(1000, 'Review must be less than 1000 characters')
+    .optional()
+    .transform(val => val ? sanitizeHtml(val) : undefined),
+})
+
+export type CreateRatingInput = z.infer<typeof createRatingSchema>
 
 // ============================================
 // PROFILE SCHEMAS
@@ -239,7 +164,7 @@ export type UpdateProfileInput = z.input<typeof updateProfileSchema>
 export type UpdateProfileOutput = z.output<typeof updateProfileSchema>
 
 // ============================================
-// COLLECTION SCHEMAS
+// COLLECTION SCHEMAS (for user collections)
 // ============================================
 
 export const createCollectionSchema = z.object({
@@ -251,7 +176,7 @@ export const createCollectionSchema = z.object({
   description: z.string()
     .max(500, 'Description must be less than 500 characters')
     .optional()
-    .transform(val => val ? sanitizeHtml(val) : val),
+    .transform(val => val ? sanitizeHtml(val) : undefined),
 
   is_public: z.boolean()
     .optional()
