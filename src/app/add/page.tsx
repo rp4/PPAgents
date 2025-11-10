@@ -92,11 +92,6 @@ export default function AddAgentPage() {
         tagIds: [], // Empty array since we removed tags
       }
 
-      // Only add category if provided
-      if (data.category_id) {
-        agentData.categoryId = data.category_id
-      }
-
       // Only add status if provided
       if (data.status_id) {
         agentData.statusId = data.status_id
@@ -205,12 +200,6 @@ export default function AddAgentPage() {
         </Link>
       </div>
 
-      <div className="mb-8">
-        <h1 className="text-3xl font-bold mb-2">Add New Agent</h1>
-        <p className="text-muted-foreground">
-          Share your AI agent with the auditing community
-        </p>
-      </div>
 
       {submitSuccess && (
         <div className="mb-6 p-4 bg-green-50 border border-green-200 rounded-lg flex items-start gap-3">
@@ -234,13 +223,7 @@ export default function AddAgentPage() {
 
       <form onSubmit={handleSubmit(onSubmit)} className="space-y-6">
         <Card>
-          <CardHeader>
-            <CardTitle>Basic Information</CardTitle>
-            <CardDescription>
-              Provide the essential details about your agent
-            </CardDescription>
-          </CardHeader>
-          <CardContent className="space-y-6">
+          <CardContent className="space-y-6 pt-6">
             {/* Agent Name */}
             <div className="space-y-2">
               <label htmlFor="name" className="text-sm font-medium">
@@ -253,7 +236,7 @@ export default function AddAgentPage() {
                 className={errors.name ? 'border-red-500' : ''}
               />
               {errors.name && (
-                <p className="text-sm text-red-500">{errors.name.message}</p>
+                <p className="text-sm text-red-500" role="alert">{errors.name.message}</p>
               )}
             </div>
 
@@ -266,25 +249,32 @@ export default function AddAgentPage() {
                 id="description"
                 {...register('description')}
                 placeholder="Describe what your agent does and how it helps auditors..."
-                rows={4}
-                className={`w-full px-3 py-2 border rounded-md resize-none ${
+                rows={1}
+                className={`w-full px-3 py-2 border rounded-md resize-none overflow-y-auto ${
                   errors.description ? 'border-red-500' : 'border-input'
                 }`}
+                style={{ minHeight: '2.5rem', maxHeight: '12rem' }}
+                onInput={(e) => {
+                  const target = e.target as HTMLTextAreaElement;
+                  target.style.height = 'auto';
+                  target.style.height = Math.min(target.scrollHeight, 192) + 'px';
+                }}
               />
               {errors.description && (
-                <p className="text-sm text-red-500">{errors.description.message}</p>
+                <p className="text-sm text-red-500" role="alert">{errors.description.message}</p>
               )}
             </div>
 
             {/* Status */}
             <div className="space-y-2">
               <label htmlFor="status_id" className="text-sm font-medium">
-                Status
+                Status <span className="text-muted-foreground text-xs font-normal">(optional)</span>
               </label>
               <select
                 id="status_id"
                 {...register('status_id')}
                 className="w-full px-3 py-2 border rounded-md"
+                aria-label="Agent status"
               >
                 <option value="">Select a status</option>
                 {statuses.map((status: any) => (
@@ -294,19 +284,20 @@ export default function AddAgentPage() {
                 ))}
               </select>
               {errors.status_id && (
-                <p className="text-sm text-red-500">{errors.status_id.message}</p>
+                <p className="text-sm text-red-500" role="alert">{errors.status_id.message}</p>
               )}
             </div>
 
             {/* Phase */}
             <div className="space-y-2">
               <label htmlFor="phase_id" className="text-sm font-medium">
-                Phase
+                Phase <span className="text-muted-foreground text-xs font-normal">(optional)</span>
               </label>
               <select
                 id="phase_id"
                 {...register('phase_id')}
                 className="w-full px-3 py-2 border rounded-md"
+                aria-label="Agent phase"
               >
                 <option value="">Select a phase</option>
                 {phases.map((phase: any) => (
@@ -316,19 +307,20 @@ export default function AddAgentPage() {
                 ))}
               </select>
               {errors.phase_id && (
-                <p className="text-sm text-red-500">{errors.phase_id.message}</p>
+                <p className="text-sm text-red-500" role="alert">{errors.phase_id.message}</p>
               )}
             </div>
 
             {/* Benefit */}
             <div className="space-y-2">
               <label htmlFor="benefit_id" className="text-sm font-medium">
-                Benefit Level
+                Benefit Level <span className="text-muted-foreground text-xs font-normal">(optional)</span>
               </label>
               <select
                 id="benefit_id"
                 {...register('benefit_id')}
                 className="w-full px-3 py-2 border rounded-md"
+                aria-label="Benefit level"
               >
                 <option value="">Select benefit level</option>
                 {benefits.map((benefit: any) => (
@@ -338,19 +330,20 @@ export default function AddAgentPage() {
                 ))}
               </select>
               {errors.benefit_id && (
-                <p className="text-sm text-red-500">{errors.benefit_id.message}</p>
+                <p className="text-sm text-red-500" role="alert">{errors.benefit_id.message}</p>
               )}
             </div>
 
             {/* Ops Status */}
             <div className="space-y-2">
               <label htmlFor="ops_status_id" className="text-sm font-medium">
-                Operational Status
+                Operational Status <span className="text-muted-foreground text-xs font-normal">(optional)</span>
               </label>
               <select
                 id="ops_status_id"
                 {...register('ops_status_id')}
                 className="w-full px-3 py-2 border rounded-md"
+                aria-label="Operational status"
               >
                 <option value="">Select operational status</option>
                 {opsStatuses.map((opsStatus: any) => (
@@ -360,69 +353,72 @@ export default function AddAgentPage() {
                 ))}
               </select>
               {errors.ops_status_id && (
-                <p className="text-sm text-red-500">{errors.ops_status_id.message}</p>
+                <p className="text-sm text-red-500" role="alert">{errors.ops_status_id.message}</p>
               )}
             </div>
 
-          </CardContent>
-        </Card>
-
-        {/* Additional Information */}
-        <Card>
-          <CardHeader>
-            <CardTitle>Additional Information</CardTitle>
-            <CardDescription>
-              Provide additional details about your agent
-            </CardDescription>
-          </CardHeader>
-          <CardContent className="space-y-6">
             {/* Data */}
             <div className="space-y-2">
               <label htmlFor="data" className="text-sm font-medium">
-                Data
+                Data <span className="text-muted-foreground text-xs font-normal">(optional)</span>
               </label>
               <textarea
                 id="data"
                 {...register('data')}
                 placeholder="Additional data or notes..."
-                rows={4}
-                className="w-full px-3 py-2 border rounded-md resize-none"
+                rows={1}
+                className="w-full px-3 py-2 border rounded-md resize-none overflow-y-auto"
+                style={{ minHeight: '2.5rem', maxHeight: '12rem' }}
+                aria-label="Additional data or notes"
+                onInput={(e) => {
+                  const target = e.target as HTMLTextAreaElement;
+                  target.style.height = 'auto';
+                  target.style.height = Math.min(target.scrollHeight, 192) + 'px';
+                }}
               />
               {errors.data && (
-                <p className="text-sm text-red-500">{errors.data.message}</p>
+                <p className="text-sm text-red-500" role="alert">{errors.data.message}</p>
               )}
             </div>
 
             {/* Benefits Description */}
             <div className="space-y-2">
               <label htmlFor="benefits_desc" className="text-sm font-medium">
-                Benefits Description
+                Benefits Description <span className="text-muted-foreground text-xs font-normal">(optional)</span>
               </label>
               <textarea
                 id="benefits_desc"
                 {...register('benefits_desc')}
                 placeholder="Describe the benefits of using this agent..."
-                rows={4}
-                className="w-full px-3 py-2 border rounded-md resize-none"
+                rows={1}
+                className="w-full px-3 py-2 border rounded-md resize-none overflow-y-auto"
+                style={{ minHeight: '2.5rem', maxHeight: '12rem' }}
+                aria-label="Benefits description"
+                onInput={(e) => {
+                  const target = e.target as HTMLTextAreaElement;
+                  target.style.height = 'auto';
+                  target.style.height = Math.min(target.scrollHeight, 192) + 'px';
+                }}
               />
               {errors.benefits_desc && (
-                <p className="text-sm text-red-500">{errors.benefits_desc.message}</p>
+                <p className="text-sm text-red-500" role="alert">{errors.benefits_desc.message}</p>
               )}
             </div>
 
             {/* Link */}
             <div className="space-y-2">
               <label htmlFor="link" className="text-sm font-medium">
-                External Link
+                External Link <span className="text-muted-foreground text-xs font-normal">(optional)</span>
               </label>
               <Input
                 id="link"
                 {...register('link')}
                 placeholder="https://example.com/agent-docs"
                 type="url"
+                aria-label="External documentation link"
               />
               {errors.link && (
-                <p className="text-sm text-red-500">{errors.link.message}</p>
+                <p className="text-sm text-red-500" role="alert">{errors.link.message}</p>
               )}
             </div>
 
@@ -434,7 +430,7 @@ export default function AddAgentPage() {
           <Button
             type="submit"
             disabled={isSubmitting || isPending || submitSuccess}
-            className="flex-1"
+            className="flex-1 bg-blue-500 hover:bg-blue-600 text-white"
             size="lg"
             onClick={(e) => {
               console.log('=== Button clicked ===')
